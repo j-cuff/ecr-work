@@ -41,13 +41,15 @@ validateVar ECR_BASE_CONTENT_PATH warn || true
 validateVar ECR_IMAGE_BASE warn || true
 validateVar ECR_PACK_BASE warn || true
 validateVar ECR_REGISTRY
-validateVar DOWNLOAD_USER warn || true
-validateVar DOWNLOAD_PASS warn || true
+validateVar DOWNLOAD_USER warn mask || true
+validateVar DOWNLOAD_PASS warn mask || true
 validateVar SCRIPT_DIR
 validateVar AIRGAP_DIR
 validateVar BINARY
 validateVar SKIP_EXTRACTION warn || true
-validateVar detect_os
+validateVar os_type
+
+check_prerequisites "${os_type}"
 
 #Step 2: Authenticate to ECR
 ############################
@@ -79,10 +81,9 @@ echo "  ECR_PACK_REGISTRY=${ECR_PACK_REGISTRY}"
 echo "  ECR_PACK_BASE=${ECR_PACK_BASE}"
 echo "  ECR_PACK_REGISTRY_REGION=${ECR_PACK_REGISTRY_REGION}"
 
-ensureVertexBinary "$VERTEX_VERSION"
-
 # Checking for the binary and extracting it if needed
 if [[ "${SKIP_EXTRACTION}" == "false" ]]; then
+  ensureVertexBinary "$VERTEX_VERSION"
   extract_binary "${BINARY}" "${AIRGAP_DIR}"
 else
   echo "Skipping binary extraction."
@@ -99,10 +100,23 @@ patch_functions_file "${AIRGAP_DIR}" "${os_type}"
 print_boxed "Step #4: Pushing Packs and Images to Airgapped Private ECR's"
 echo "Starting airgap push for version: ${VERTEX_VERSION}"
 echo "Binary: ${BINARY}"
-echo "Registry: ${AWS_ACCOUNT}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_BASE_CONTENT_PATH}"
-echo "Packs Push to: ${AWS_ACCOUNT}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_BASE_CONTENT_PATH%/}${ECR_PACK_BASE:+/${ECR_PACK_BASE#/}}/spectro-packs"
-echo "Images Push to: ${AWS_ACCOUNT}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_BASE_CONTENT_PATH%/}${ECR_IMAGE_BASE:+/${ECR_IMAGE_BASE#/}}"
+echo "Registry: ${ECR_REGISTRY}"
+echo "Packs Push to: ${ECR_PACK_REGISTRY}/${ECR_PACK_BASE%/}/spectro-packs"
+echo "Images Push to: ${ECR_IMAGE_REGISTRY}/${ECR_IMAGE_BASE%/}"
 echo ""
+
+read -r -p "Continue with the airgap push to these destinations? [y/N]: " PUSH_CONFIRM
+case "${PUSH_CONFIRM}" in
+  y|Y|yes|YES)
+    echo "Continuing with the airgap push."
+    ;;
+  *)
+    echo "Airgap push aborted."
+    exit 0
+    ;;
+esac
+echo ""
+
 # Run the binary, capture output, auto-create any missing repos, retry ---
 pushd "${AIRGAP_DIR}" >/dev/null
 
@@ -120,72 +134,6 @@ fi
 
 echo "Airgap push completed successfully."
 
-
-# while true; do
-#   tmp_output="$(mktemp)"
-
-#   set +e
-#   "$BINARY" 2>&1 | tee "$tmp_output" >&2
-#   binary_status="${PIPESTATUS[0]}"
-#   set -e
-
-#   OUTPUT="$(cat "$tmp_output")"
-#   rm -f "$tmp_output"
-
-#   MISSING_REPOS="$(extract_missing_repos "$OUTPUT")"
-
-#   if [[ -z "$MISSING_REPOS" ]]; then
-#     if [[ "$binary_status" -eq 0 ]]; then
-#       echo ""
-#       echo "Done — no more missing repos."
-#       break
-#     else
-#       echo ""
-#       echo "Binary failed, but no missing ECR repos were detected in the output." >&2
-#       exit "$binary_status"
-#     fi
-#   fi
-
-#   echo ""
-#   echo "Auto-creating missing repos..."
-
-#   while IFS= read -r repo; do
-#     echo "$repo"
-#     [[ -z "$repo" ]] && continue
-#     create_ecr_repo "$repo"
-#   done <<< "$MISSING_REPOS"
-
-#   echo ""
-#   echo "Retrying binary..."
-# done
-
-# while true; do
-#   OUTPUT=$("$BINARY" 2>&1 | tee /dev/stderr)
-
-#   # Check for missing repo errors
-#   MISSING=$(echo "$OUTPUT" | grep -oP "(?<=archive/)[^']+(?= does not exist)" | sort -u)
-
-#   if [ -z "$MISSING" ]; then
-#     echo ""
-#     echo "Done — no more missing repos."
-#     break
-#   fi
-
-#   echo ""
-#   echo "Auto-creating missing repos..."
-#   while IFS= read -r PACK; do
-#     echo "  Creating: ${ECR_BASE_CONTENT_PATH}/spectro-packs/archive/${PACK}"
-#     aws ecr create-repository \
-#       --repository-name "${ECR_BASE_CONTENT_PATH}/spectro-packs/archive/${PACK}" \
-#       --region "${AWS_REGION}" 2>/dev/null \
-#       && echo "    ✓ Created" || echo "    ↩ Already exists"
-#   done <<< "$MISSING"
-
-#   echo ""
-#   echo "Retrying binary..."
-# done
-
 #IDEABOARD: 
 # export cluster profile and create script to parse, download packs, and push to ECR.
 # take copy all urls command from artifact studio, download packs and push to ECR.
-

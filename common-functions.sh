@@ -10,9 +10,11 @@ validateVar() {
   #   validateVar <variablename>             # exits on missing var
   #   validateVar <variablename> fatal       # exits on missing var
   #   validateVar <variablename> warn        # continues on missing var
+  #   validateVar <variablename> warn mask   # validates but redacts the value
 
   local var_name="${1:-}"
   local mode="${2:-fatal}"
+  local display_mode="${3:-plain}"
   local value="${!var_name:-}"
 
   if [[ -z "$var_name" ]]; then
@@ -30,7 +32,11 @@ validateVar() {
       return 1
     fi
   else
-    echo "✅ $var_name: $value"
+    if [[ "$display_mode" == "mask" ]]; then
+      echo "✅ $var_name: [REDACTED]"
+    else
+      echo "✅ $var_name: $value"
+    fi
     return 0
   fi
 }
@@ -100,13 +106,81 @@ function make_executable_if_needed() {
   fi
 }
 
-function patch_functions_file() { 
+function patch_push_destination_output() {
+  local functions_file="$1"
+  local temporary_file
+  temporary_file="$(mktemp "${functions_file}.push-paths.XXXXXX")"
+
+  if ! awk '
+    function indentation(line, whitespace) {
+      whitespace = line
+      sub(/[^ \t].*$/, "", whitespace)
+      return whitespace
+    }
+
+    /^apply_ecr_images\(\)/ {
+      scope = "images"
+    }
+    /^ecr_pack_push\(\)/ {
+      scope = "packs"
+    }
+
+    scope == "images" &&
+      index($0, "status_display \" - Pushing image $image_url\"") {
+        prefix = indentation($0)
+        print prefix "status_display \" - Pushing image to ${image_dst_url}/${image_url}\""
+        print prefix "status_display \" - Pushing image to ${image_dst_url}/${image_url2}\""
+        next
+      }
+
+    scope == "packs" &&
+      index($0, "status_display \" - Pushing Pack $NAME:$VERSION\"") {
+        prefix = indentation($0)
+        if ((getline following_line) > 0) {
+          if (index(following_line, "status_display \" - Pushing Scar OCI $NAME:$VERSION\"")) {
+            print prefix "status_display \" - Pushing Scar OCI to ${pack_registry}/${scar_oci_loc}/$NAME:$VERSION\""
+            next
+          }
+          print prefix "status_display \" - Pushing Pack to ${pack_registry}/${pack_loc}/$NAME:$VERSION\""
+          print following_line
+          next
+        }
+        print prefix "status_display \" - Pushing Pack to ${pack_registry}/${pack_loc}/$NAME:$VERSION\""
+        next
+      }
+
+    scope == "packs" &&
+      index($0, "status_display \" - Pushing Scar OCI $NAME:$VERSION\"") {
+        prefix = indentation($0)
+        print prefix "status_display \" - Pushing Scar OCI to ${pack_registry}/${scar_oci_loc}/$NAME:$VERSION\""
+        next
+      }
+
+    {
+      print
+      if ($0 == "}") {
+        scope = ""
+      }
+    }
+  ' "${functions_file}" >"${temporary_file}"; then
+    rm -f "${temporary_file}"
+    fail "Failed to add resolved push destinations to ${functions_file}"
+  fi
+
+  if ! cat "${temporary_file}" >"${functions_file}"; then
+    rm -f "${temporary_file}"
+    fail "Failed to update ${functions_file} with resolved push destinations"
+  fi
+  rm -f "${temporary_file}"
+}
+
+function patch_functions_file() {
   local airgap_dir="$1"
   local os_type="$2"
   local functions_file="${airgap_dir}/bin/functions.sh"
 
   if [[ ! -f "${functions_file}" ]]; then
-    warn "functions.sh not found at ${functions_file}; skipping ecr-public -> ecr replacement."
+    warn "functions.sh not found at ${functions_file}; skipping airgap function patches."
     return
   fi
 
@@ -120,6 +194,9 @@ function patch_functions_file() {
   elif [[ $os_type == "linux" ]]; then
     sed -i "s/ecr-public/ecr/g" "${functions_file}"
   fi
+
+  echo "Patching ${functions_file}: displaying exact image and pack destinations"
+  patch_push_destination_output "${functions_file}"
 }
 
 function create_ecr_repo() {
@@ -393,6 +470,162 @@ function detect_os() {
       echo "unknown"
       ;;
   esac
+}
+
+function print_prerequisite_install_instructions() {
+  local os_type="$1"
+  shift
+  local tool
+
+  echo ""
+  echo "Installation guidance for ${os_type}:"
+  for tool in "$@"; do
+    case "${os_type}:${tool}" in
+      macos:docker)
+        echo "  Docker:"
+        echo "    brew install --cask docker"
+        echo "    Then start Docker Desktop."
+        echo "    https://docs.docker.com/desktop/setup/install/mac-install/"
+        ;;
+      macos:oras)
+        echo "  ORAS:"
+        echo "    brew install oras"
+        echo "    https://oras.land/docs/installation/"
+        ;;
+      macos:jq)
+        echo "  jq:"
+        echo "    brew install jq"
+        echo "    https://jqlang.org/download/"
+        ;;
+      macos:aws)
+        echo "  AWS CLI v2:"
+        echo "    Download and run https://awscli.amazonaws.com/AWSCLIV2.pkg"
+        echo "    https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html"
+        ;;
+      linux:docker)
+        echo "  Docker Engine:"
+        echo "    Follow the instructions for your Linux distribution:"
+        echo "    https://docs.docker.com/engine/install/"
+        ;;
+      linux:oras)
+        echo "  ORAS:"
+        echo "    sudo snap install oras --classic"
+        echo "    Or install a release artifact from https://oras.land/docs/installation/"
+        ;;
+      linux:jq)
+        echo "  jq:"
+        echo "    Debian/Ubuntu: sudo apt-get update && sudo apt-get install -y jq"
+        echo "    Fedora/RHEL:   sudo dnf install -y jq"
+        echo "    https://jqlang.org/download/"
+        ;;
+      linux:aws)
+        echo "  AWS CLI v2:"
+        echo "    Follow the architecture-specific installer instructions:"
+        echo "    https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html"
+        ;;
+      wsl:docker)
+        echo "  Docker Desktop with the WSL 2 backend:"
+        echo "    https://docs.docker.com/desktop/features/wsl/"
+        ;;
+      wsl:oras)
+        echo "  ORAS inside WSL:"
+        echo "    sudo snap install oras --classic"
+        echo "    Or install a Linux release artifact from https://oras.land/docs/installation/"
+        ;;
+      wsl:jq)
+        echo "  jq inside WSL:"
+        echo "    sudo apt-get update && sudo apt-get install -y jq"
+        echo "    https://jqlang.org/download/"
+        ;;
+      wsl:aws)
+        echo "  AWS CLI v2 inside WSL:"
+        echo "    https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html"
+        ;;
+      windows:docker)
+        echo "  Docker Desktop:"
+        echo "    https://docs.docker.com/desktop/setup/install/windows-install/"
+        ;;
+      windows:oras)
+        echo "  ORAS:"
+        echo "    Install the Windows release artifact from https://oras.land/docs/installation/"
+        ;;
+      windows:jq)
+        echo "  jq:"
+        echo "    winget install jqlang.jq"
+        echo "    https://jqlang.org/download/"
+        ;;
+      windows:aws)
+        echo "  AWS CLI v2:"
+        echo "    https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html"
+        ;;
+      *:docker)
+        echo "  Docker: https://docs.docker.com/get-started/get-docker/"
+        ;;
+      *:oras)
+        echo "  ORAS: https://oras.land/docs/installation/"
+        ;;
+      *:jq)
+        echo "  jq: https://jqlang.org/download/"
+        ;;
+      *:aws)
+        echo "  AWS CLI v2: https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html"
+        ;;
+    esac
+  done
+}
+
+function check_prerequisites() {
+  local os_type="${1:-$(detect_os)}"
+  local tool
+  local docker_daemon_ready=true
+  local -a missing_tools=()
+
+  echo "Checking required command-line tools for ${os_type}..."
+  for tool in docker oras jq aws; do
+    if command -v "${tool}" >/dev/null 2>&1; then
+      echo "✅ ${tool}: $(command -v "${tool}")"
+    else
+      echo "❌ ${tool}: not found" >&2
+      missing_tools+=("${tool}")
+    fi
+  done
+
+  if command -v docker >/dev/null 2>&1 &&
+    ! docker info >/dev/null 2>&1; then
+    docker_daemon_ready=false
+    echo "❌ docker: CLI is installed, but the Docker daemon is unavailable" >&2
+  fi
+
+  if ((${#missing_tools[@]} > 0)); then
+    print_prerequisite_install_instructions "${os_type}" "${missing_tools[@]}"
+  fi
+
+  if [[ "${docker_daemon_ready}" != "true" ]]; then
+    echo ""
+    case "${os_type}" in
+      macos)
+        echo "Start Docker Desktop (for example: open -a Docker), then retry."
+        ;;
+      linux)
+        echo "Start Docker (for example: sudo systemctl start docker), then retry."
+        ;;
+      wsl)
+        echo "Start Docker Desktop with WSL integration enabled, then retry."
+        ;;
+      *)
+        echo "Start the Docker daemon, then retry."
+        ;;
+    esac
+  fi
+
+  if ((${#missing_tools[@]} > 0)) ||
+    [[ "${docker_daemon_ready}" != "true" ]]; then
+    echo ""
+    echo "Prerequisite check failed. Install or start the items above and rerun."
+    return 1
+  fi
+
+  echo "✅ All required command-line prerequisites are available."
 }
 
 function enable_docker_push_skip_if_exists() {
