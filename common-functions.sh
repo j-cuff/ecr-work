@@ -219,7 +219,7 @@ function run_apply_script_with_repo_retry() {
   done
 }
 
-create_missing_pack_repos() {
+function create_missing_pack_repos() {
   local output="$1"
   local missing
   missing="$(echo "${output}" | grep -oP "(?<=archive/)[^']+(?= does not exist)" | sort -u || true)"
@@ -242,7 +242,7 @@ create_missing_pack_repos() {
     fi
   done <<< "${missing}"
   return 0
-  }
+}
 
 function download_file() { #1=version
   local version="$1"
