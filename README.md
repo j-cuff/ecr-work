@@ -15,7 +15,7 @@ cd /path/to/ecr
 
 | Script | Use case |
 | --- | --- |
-| `push_to_ecr.sh` | Extract a Palette Vertex airgap binary and push all included images, packs, and manifests to ECR. |
+| `push_bin_to_ecr.sh` | Extract a Palette Vertex airgap binary and push all included images, packs, and manifests to ECR. |
 | `push_zst_to_ecr.sh` | Push `.zst` bundles that already exist in a local directory. |
 | `push_from_url.sh` | Download bundles and signatures listed in a supplied URL file, verify signatures, and push the `.zst` files. |
 | `delete_ecr_images.sh` | Delete the configured pack repository tree after an exact-path confirmation. This is the recommended deletion script. |
@@ -29,7 +29,7 @@ cd /path/to/ecr
 - Prefer an AWS profile, IAM role, or standard AWS environment variables over
   access keys stored in these scripts.
 - `DOWNLOAD_USER` and `DOWNLOAD_PASS` are always masked by the shared validation
-  function. Both `push_to_ecr.sh` and `push_from_url.sh` retain the values
+  function. Both `push_bin_to_ecr.sh` and `push_from_url.sh` retain the values
   internally without printing them during validation.
 - `delete_ecr_images.sh` uses `aws ecr delete-repository --force`. This
   permanently deletes each selected repository and all images in it.
@@ -52,12 +52,12 @@ Edit `common-config.sh` before running the scripts.
 | `ECR_IMAGE_BASE` | Image namespace below the base content path. | `spectro-images` |
 | `ECR_PACK_BASE` | Pack namespace used by direct bundle pushes. The full airgap workflow normalizes the final `spectro-packs` segment because its extracted setup adds that segment itself. | `spectro-packs` |
 | `ECR_DELETE_PATH` | Exact repository prefix that `delete_ecr_images.sh` may delete, relative to `ECR_REGISTRY`. A leading or trailing slash is normalized away. | `/palette-airgap/spectro-packs` |
-| `DOWNLOAD_USER` | Optional for `push_to_ecr.sh`; required by `push_from_url.sh`. | Set locally |
-| `DOWNLOAD_PASS` | Optional for `push_to_ecr.sh`; required by `push_from_url.sh`. | Set locally |
+| `DOWNLOAD_USER` | Optional for `push_bin_to_ecr.sh`; required by `push_from_url.sh`. | Set locally |
+| `DOWNLOAD_PASS` | Optional for `push_bin_to_ecr.sh`; required by `push_from_url.sh`. | Set locally |
 | `SCRIPT_DIR` | Absolute directory containing the scripts, derived automatically. | Do not normally override |
 | `AIRGAP_DIR` | Extraction directory for the airgap binary. | `spectroairgap-4.9.18` |
 | `SKIP_EXTRACTION` | Reuse an existing extraction directory when `true`. | `false` |
-| `BINARY` | Airgap installer path used by `push_to_ecr.sh`. | `./airgap-vertex-v4.9.18.bin` |
+| `BINARY` | Airgap installer path used by `push_bin_to_ecr.sh`. | `${SCRIPT_DIR}/downloads/airgap-vertex-v4.9.18.bin` |
 
 The full-push workflow resolves the default destinations as:
 
@@ -68,7 +68,7 @@ Packs:  <registry>/<base-content-path>/spectro-packs/archive/...
 
 The shared default `ECR_PACK_BASE="spectro-packs"` now resolves consistently:
 
-- `push_to_ecr.sh` removes a final `spectro-packs` segment from the parent path
+- `push_bin_to_ecr.sh` removes a final `spectro-packs` segment from the parent path
   passed to the extracted airgap setup because that setup adds
   `spectro-packs/archive` itself.
 - `push_zst_to_ecr.sh` pushes directly to
@@ -82,12 +82,12 @@ The scripts have different requirements:
 
 | Script | Requirements enforced or used |
 | --- | --- |
-| `push_to_ecr.sh` | AWS CLI v2, ORAS, Docker CLI with a running daemon, `zip`, `unzip`, and `jq`. It also uses `curl` if the airgap binary must be downloaded. |
+| `push_bin_to_ecr.sh` | AWS CLI v2, ORAS, Docker CLI with a running daemon, `zip`, `unzip`, and `jq`. It also uses `curl` if the airgap binary must be downloaded. |
 | `push_zst_to_ecr.sh` | A supported Palette CLI, AWS CLI, and a directory containing `.zst` files. The script explicitly rejects macOS. |
 | `push_from_url.sh` | A supported Palette CLI, AWS CLI, `curl`, OpenSSL, a URL-list file, download credentials, and an included `downloads/spectro_public_key.pem`. |
 | `delete_ecr_images.sh` | AWS CLI configured for the target account and region. |
 
-Only `push_to_ecr.sh` runs the shared prerequisite checker. It detects macOS,
+Only `push_bin_to_ecr.sh` runs the shared prerequisite checker. It detects macOS,
 Linux, WSL, and Windows and prints platform-specific installation instructions
 for missing tools. AWS CLI v1 is rejected. ORAS must be installed, but an
 installed version other than v1.0.0 produces a warning and execution continues.
@@ -120,13 +120,13 @@ aws ecr describe-repositories --region "<region>" --max-results 5
 Configure `common-config.sh`, then run:
 
 ```bash
-./push_to_ecr.sh
+./push_bin_to_ecr.sh
 ```
 
 The script also accepts the documented version argument:
 
 ```bash
-./push_to_ecr.sh 4.9.18
+./push_bin_to_ecr.sh 4.9.18
 ```
 
 The positional version overrides `VERTEX_VERSION`. When `BINARY` and
@@ -134,9 +134,16 @@ The positional version overrides `VERTEX_VERSION`. When `BINARY` and
 are recalculated for the positional version. Explicit custom paths are
 preserved and used as configured.
 
+By default, the script looks for and downloads the installer beneath
+`downloads/`:
+
+```text
+downloads/airgap-vertex-v<VERTEX_VERSION>.bin
+```
+
 The workflow:
 
-1. Creates `logs/push_to_ecr-<version>-<timestamp>.log`.
+1. Creates `logs/push_bin_to_ecr-<version>-<timestamp>.log`.
 2. Detects the operating system.
 3. Validates shared configuration, masking download credentials.
 4. Checks prerequisites and required tool versions.
@@ -160,7 +167,7 @@ If the binary is missing, the script prompts before downloading it. For an
 unattended approved download:
 
 ```bash
-DOWNLOAD_BINARY=true ./push_to_ecr.sh
+DOWNLOAD_BINARY=true ./push_bin_to_ecr.sh
 ```
 
 Each pushed pack is displayed with its full destination:
@@ -184,13 +191,13 @@ Use the next workflow to reuse that directory.
 Use this when `AIRGAP_DIR` already contains a complete extraction:
 
 ```bash
-./push_to_ecr.sh --skip-extraction
+./push_bin_to_ecr.sh --skip-extraction
 ```
 
 The short form is:
 
 ```bash
-./push_to_ecr.sh -s
+./push_bin_to_ecr.sh -s
 ```
 
 With this option:
@@ -332,10 +339,10 @@ Any confirmation mismatch aborts before deletion.
 
 ## Logs and generated files
 
-`push_to_ecr.sh` writes:
+`push_bin_to_ecr.sh` writes:
 
 ```text
-logs/push_to_ecr-<vertex-version>-<YYYYmmddHHMMSS>.log
+logs/push_bin_to_ecr-<vertex-version>-<YYYYmmddHHMMSS>.log
 ```
 
 The `logs/` directory is created automatically beneath the directory containing
@@ -344,6 +351,7 @@ path is printed when execution starts. The `.gitignore` excludes:
 
 - the `logs/` directory
 - legacy root-level `push_to_ecr-*.log` files
+- root-level `push_bin_to_ecr-*.log` files
 - extracted `spectroairgap-*` directories
 - all `airgap-vertex-v*.bin` files
 - `.zst` and `.sig.bin` artifacts directly beneath any `downloads/` directory
@@ -370,7 +378,7 @@ file types before committing.
 
 ### Prerequisite check fails
 
-This check is run only by `push_to_ecr.sh`. Follow its OS-specific guidance and
+This check is run only by `push_bin_to_ecr.sh`. Follow its OS-specific guidance and
 confirm versions with:
 
 ```bash
@@ -407,7 +415,7 @@ Start the daemon before rerunning:
 Either reuse it:
 
 ```bash
-./push_to_ecr.sh --skip-extraction
+./push_bin_to_ecr.sh --skip-extraction
 ```
 
 or move it aside after verifying that it is safe to do so. The script does not
@@ -442,7 +450,7 @@ active AWS profile.
 
 ### Incorrect destination
 
-For `push_to_ecr.sh`, do not approve the confirmation. Correct
+For `push_bin_to_ecr.sh`, do not approve the confirmation. Correct
 `ECR_BASE_CONTENT_PATH`, `ECR_IMAGE_BASE`, or `ECR_PACK_BASE`, then rerun and
 review the resolved paths.
 

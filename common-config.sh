@@ -13,7 +13,7 @@ DOWNLOAD_PASS=""    # optional basic auth password
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 AIRGAP_DIR="${SCRIPT_DIR}/spectroairgap-${VERTEX_VERSION}"
 SKIP_EXTRACTION="false"
-BINARY="./airgap-vertex-v${VERTEX_VERSION}.bin"
+BINARY="${SCRIPT_DIR}/downloads/airgap-vertex-v${VERTEX_VERSION}.bin"
 #####################################
 # Specific for delete_ecr_images.sh #
 #####################################

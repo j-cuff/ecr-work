@@ -1,6 +1,6 @@
 #! /bin/bash
-# Usage: ./push_to_ecr.sh [version] [--skip-extraction|-s]
-# Example: ./push_to_ecr.sh 4.9.18
+# Usage: ./push_bin_to_ecr.sh [version] [--skip-extraction|-s]
+# Example: ./push_bin_to_ecr.sh 4.9.18
 set -euo pipefail
 source ./common-config.sh
 source ./common-functions.sh
@@ -16,7 +16,7 @@ function usage() {
 }
 
 configured_vertex_version="${VERTEX_VERSION:-}"
-default_binary="./airgap-vertex-v${configured_vertex_version}.bin"
+default_binary="${SCRIPT_DIR}/downloads/airgap-vertex-v${configured_vertex_version}.bin"
 default_airgap_dir="${SCRIPT_DIR}/spectroairgap-${configured_vertex_version}"
 
 while [[ $# -gt 0 ]]; do
@@ -33,7 +33,7 @@ if [[ -n "${VERSION:-}" ]]; then
   VERTEX_VERSION="${VERSION}"
 
   if [[ "${BINARY:-}" == "${default_binary}" ]]; then
-    BINARY="./airgap-vertex-v${VERTEX_VERSION}.bin"
+    BINARY="${SCRIPT_DIR}/downloads/airgap-vertex-v${VERTEX_VERSION}.bin"
   fi
 
   if [[ "${AIRGAP_DIR:-}" == "${default_airgap_dir}" ]]; then
@@ -44,7 +44,7 @@ fi
 validateVar VERTEX_VERSION
 timestamp=$(date +%Y%m%d%H%M%S)
 LOG_DIR="${SCRIPT_DIR}/logs"
-LOG_FILE="${LOG_DIR}/push_to_ecr-${VERTEX_VERSION}-${timestamp}.log"
+LOG_FILE="${LOG_DIR}/push_bin_to_ecr-${VERTEX_VERSION}-${timestamp}.log"
 mkdir -p "${LOG_DIR}"
 touch "${LOG_FILE}"
 export LOG_FILE

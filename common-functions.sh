@@ -357,13 +357,16 @@ function download_file() { #1=version
   local base_url="https://software-private.spectrocloud.com/airgap-vertex"
   local filename="airgap-vertex-v${version}.bin"
   local url="${base_url}/${version}/${filename}"
+  local download_dir="${SCRIPT_DIR:-.}/downloads"
+
+  mkdir -p "${download_dir}"
 
   curl -fL \
     --user "${username}:${password}" \
     --connect-timeout 10 \
     --retry 3 \
     --retry-delay 5 \
-    -o "${filename}" \
+    -o "${download_dir}/${filename}" \
     "${url}"
 }
 
@@ -412,7 +415,7 @@ function ensureVertexBinary() {
     exit 1
   fi
 
-  local binary="${2:-${BINARY:-./airgap-vertex-v${version}.bin}}"
+  local binary="${2:-${BINARY:-${SCRIPT_DIR:-.}/downloads/airgap-vertex-v${version}.bin}}"
   local base_url="https://software-private.spectrocloud.com/airgap-vertex"
   local filename="airgap-vertex-v${version}.bin"
   local url="${base_url}/${version}/${filename}"
@@ -443,6 +446,11 @@ function ensureVertexBinary() {
   case "$answer" in
     y|Y|yes|YES)
       echo "Downloading ${filename}..."
+
+      local binary_dir
+      binary_dir="$(dirname "${binary}")"
+      mkdir -p "${binary_dir}" ||
+        fail "Failed to create binary download directory: ${binary_dir}"
 
       local curl_args=(
         -fL
