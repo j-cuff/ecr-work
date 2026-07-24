@@ -3,7 +3,7 @@
 # Usage: ./push_from_url.sh <zst-urls-file>
 # Example: ./push_from_url.sh ./zst_urls.txt
 # Build a bundle, copy urls to file, then download and push to ECR using this script.
-set -uo pipefail
+set -euo pipefail
 source ./common-config.sh
 source ./common-functions.sh
 

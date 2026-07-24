@@ -1,8 +1,8 @@
 #!/bin/bash
-# quick_push_zsts.sh
-# Prerequisites: palette CLI installed and configured, AWS CLI installed and configured, ORAS installed and configured, common-config.sh 
-# Usage: ./quick_push_zsts.sh <bundle-dir>
-# Example: ./quick_push_zsts.sh ./bundles
+# push_zst_to_ecr.sh
+# Prerequisites: palette CLI installed and configured, AWS CLI installed and configured, common-config.sh
+# Usage: ./push_zst_to_ecr.sh <bundle-dir>
+# Example: ./push_zst_to_ecr.sh ./bundles
 # Used to push all .zst bundles from a directory to ECR using the palette content push command.
 
 set -euo pipefail
@@ -26,6 +26,13 @@ validateVar ECR_REGISTRY
 BUNDLE_DIR="${1:?Usage: $0 <bundle-dir>}" || echo "Bundle Directory: ${BUNDLE_DIR}"
 BASE_PATH="${ECR_BASE_CONTENT_PATH:+${ECR_BASE_CONTENT_PATH%/}/}${ECR_PACK_BASE#/}" || echo "Base Content Path: ${BASE_PATH}"
 
+shopt -s nullglob
+bundles=("${BUNDLE_DIR}"/*.zst)
+if ((${#bundles[@]} == 0)); then
+  echo "No .zst files found in ${BUNDLE_DIR}" >&2
+  exit 1
+fi
+
 echo "==> Authenticating to ECR..."
 
 palette content registry-login \
@@ -36,13 +43,34 @@ palette content registry-login \
 
 echo "==> Pushing all .zst bundles from ${BUNDLE_DIR} to ${ECR_REGISTRY}/${BASE_PATH}"
 
-for bundle in "${BUNDLE_DIR}"/*.zst; do
-  [[ -f "$bundle" ]] || { echo "No .zst files found in ${BUNDLE_DIR}"; exit 1; }
+failed_bundles=()
+successful_pushes=0
+
+for bundle in "${bundles[@]}"; do
   echo "--> Pushing: ${bundle}"
-  palette content push \
+  if palette content push \
     --file "${bundle}" \
     --registry "${ECR_REGISTRY}/${BASE_PATH}" \
-    --insecure
+    --insecure; then
+    successful_pushes=$((successful_pushes + 1))
+    echo "--> Push succeeded: ${bundle}"
+  else
+    push_rc=$?
+    failed_bundles+=("${bundle} (exit code ${push_rc})")
+    echo "ERROR: Push failed for ${bundle} with exit code ${push_rc}. Continuing with the remaining bundles." >&2
+  fi
 done
+
+if ((${#failed_bundles[@]} > 0)); then
+  echo ""
+  echo "==> Bundle push completed with failures."
+  echo "    Successful: ${successful_pushes}"
+  echo "    Failed:     ${#failed_bundles[@]}"
+  echo "Failed bundles:"
+  for failed_bundle in "${failed_bundles[@]}"; do
+    echo "  - ${failed_bundle}"
+  done
+  exit 1
+fi
 
 echo "==> All bundles pushed successfully."

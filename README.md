@@ -227,7 +227,13 @@ The script:
 1. Loads shared ECR configuration and rejects macOS.
 2. Logs the Palette CLI into ECR using an AWS ECR authorization token.
 3. Pushes every `./bundles/*.zst` file with `palette content push`.
-4. Stops if the directory contains no `.zst` files.
+4. Records a failed bundle push and continues with every remaining `.zst`.
+5. Prints successful and failed totals after processing the full directory.
+6. Exits nonzero after the batch if one or more pushes failed.
+
+The script still stops before authentication when the directory contains no
+`.zst` files. A nonzero final status means the batch was only partially
+successful; it does not mean later bundles were skipped.
 
 The destination joins the nonempty configured path components:
 
