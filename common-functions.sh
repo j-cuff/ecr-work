@@ -30,11 +30,11 @@ validateVar() {
   fi
 
   if [[ -z "$value" ]]; then
-    echo "❌ Error: variable '$var_name' is not set or is empty" >&2
-
     if [[ "$mode" == "fatal" ]]; then
+      echo "❌ Error: variable '$var_name' is not set or is empty" >&2
       exit 1
     else
+      echo "⚠️  Warning: variable '$var_name' is not set or is empty" >&2
       return 1
     fi
   else
