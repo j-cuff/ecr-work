@@ -7,6 +7,13 @@ set -euo pipefail
 source ./common-config.sh
 source ./common-functions.sh
 
+os_type="$(detect_os)"
+if [[ "${os_type}" == "macos" ]]; then
+  echo "ERROR: push_from_url.sh is not supported on macOS because the Palette CLI is not available as a compatible multi-architecture binary." >&2
+  echo "Run this script from a supported Linux environment instead." >&2
+  exit 1
+fi
+
 if [[ $# -ne 1 ]]; then
   echo "Usage: $0 <zst-urls-file>" >&2
   exit 2

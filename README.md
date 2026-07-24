@@ -84,7 +84,7 @@ The scripts have different requirements:
 | --- | --- |
 | `push_bin_to_ecr.sh` | AWS CLI v2, ORAS, Docker CLI with a running daemon, `zip`, `unzip`, and `jq`. It also uses `curl` if the airgap binary must be downloaded. |
 | `push_zst_to_ecr.sh` | A supported Palette CLI, AWS CLI, and a directory containing `.zst` files. The script explicitly rejects macOS. |
-| `push_from_url.sh` | A supported Palette CLI, AWS CLI, `curl`, OpenSSL, a URL-list file, download credentials, and an included `downloads/spectro_public_key.pem`. |
+| `push_from_url.sh` | A supported Palette CLI, AWS CLI, `curl`, OpenSSL, a URL-list file, download credentials, and an included `downloads/spectro_public_key.pem`. The script explicitly rejects macOS. |
 | `delete_ecr_images.sh` | AWS CLI configured for the target account and region. |
 
 Only `push_bin_to_ecr.sh` runs the shared prerequisite checker. It detects macOS,
@@ -95,9 +95,8 @@ installed version other than v1.0.0 produces a warning and execution continues.
 The individual bundle scripts do not run that shared checker. Install and
 configure their dependencies before execution. The Palette CLI used by these
 workflows is not available as a compatible multi-architecture macOS binary;
-use a supported Linux environment. `push_zst_to_ecr.sh` enforces this
-restriction, while `push_from_url.sh` currently does not contain the same
-precheck.
+use a supported Linux environment. Both `push_zst_to_ecr.sh` and
+`push_from_url.sh` enforce this restriction before bundle processing.
 
 The AWS identity needs permissions appropriate to the selected workflow,
 which can include:
@@ -254,6 +253,10 @@ Create a URL-list file with one URL per line. Empty lines and lines beginning
 with `#` are ignored. Include both each `.zst` URL and its matching `.sig.bin`
 URL. Pass that file as the script's only argument.
 
+This workflow is not supported on macOS. The script exits before argument
+validation, downloads, authentication, or bundle processing. Run it from a
+supported Linux environment.
+
 Run:
 
 ```bash
@@ -268,22 +271,23 @@ configure a public key.
 
 The script:
 
-1. Requires nonempty `DOWNLOAD_USER` and `DOWNLOAD_PASS`.
-2. Resolves the supplied URL file and creates a sibling `downloads/` directory.
-3. Downloads every listed URL into that directory using HTTP basic
+1. Rejects macOS before performing any work.
+2. Requires nonempty `DOWNLOAD_USER` and `DOWNLOAD_PASS`.
+3. Resolves the supplied URL file and creates a sibling `downloads/` directory.
+4. Downloads every listed URL into that directory using HTTP basic
    authentication.
-4. Skips files already present locally without downloading or revalidating
+5. Skips files already present locally without downloading or revalidating
    them.
-5. Requires the included `downloads/spectro_public_key.pem`.
-6. For each `.zst`, looks for a sibling signature named
+6. Requires the included `downloads/spectro_public_key.pem`.
+7. For each `.zst`, looks for a sibling signature named
    `<bundle-name>.sig.bin`.
-7. Verifies every listed bundle, records missing or invalid signatures, and
+8. Verifies every listed bundle, records missing or invalid signatures, and
    continues checking the remaining entries.
-8. Authenticates the Palette CLI to ECR.
-9. Pushes only successfully verified `.zst` files with `--insecure`.
-10. Records an individual push failure and continues with the remaining
+9. Authenticates the Palette CLI to ECR.
+10. Pushes only successfully verified `.zst` files with `--insecure`.
+11. Records an individual push failure and continues with the remaining
     verified bundles.
-11. Prints verification and push totals, then exits nonzero if any bundle
+12. Prints verification and push totals, then exits nonzero if any bundle
     failed verification or upload.
 
 This workflow sets `ECR_PACK_BASE="spectro-packs"` internally. Its destination
@@ -398,8 +402,7 @@ execution.
 ### Palette CLI workflow fails on macOS
 
 Run the bundle workflow from a supported Linux environment.
-`push_zst_to_ecr.sh` rejects macOS immediately. `push_from_url.sh` currently
-does not perform the precheck, but it still invokes the same Palette CLI.
+Both `push_zst_to_ecr.sh` and `push_from_url.sh` reject macOS immediately.
 
 ### Docker is installed but unavailable
 
