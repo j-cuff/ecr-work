@@ -17,20 +17,20 @@ cd /path/to/ecr
 | --- | --- |
 | `push_to_ecr.sh` | Extract a Palette Vertex airgap binary and push all included images, packs, and manifests to ECR. |
 | `push_zst_to_ecr.sh` | Push `.zst` bundles that already exist in a local directory. |
-| `push_from_url.sh` | Download bundles and signatures listed in `zst_urls.txt`, verify signatures, and push the `.zst` files. |
+| `push_from_url.sh` | Download bundles and signatures listed in a supplied URL file, verify signatures, and push the `.zst` files. |
 | `delete_ecr_images.sh` | Delete the configured pack repository tree after an exact-path confirmation. This is the recommended deletion script. |
 | `common-config.sh` | Shared version, registry, path, and download configuration. |
 | `common-functions.sh` | Shared validation, authentication, extraction, patching, retry, and prerequisite functions. |
-| `zst_urls.txt` | URL input consumed by `push_from_url.sh`. |
+| `zst_urls.txt` | Example URL input for `push_from_url.sh`. |
 
 ## Security and safety
 
 - Do not commit real download passwords or AWS credentials.
 - Prefer an AWS profile, IAM role, or standard AWS environment variables over
   access keys stored in these scripts.
-- `DOWNLOAD_USER` and `DOWNLOAD_PASS` are masked by `push_to_ecr.sh`. The current
-  `push_from_url.sh` validation prints both values, so do not share or publish
-  its terminal output.
+- `DOWNLOAD_USER` and `DOWNLOAD_PASS` are always masked by the shared validation
+  function. Both `push_to_ecr.sh` and `push_from_url.sh` retain the values
+  internally without printing them during validation.
 - `delete_ecr_images.sh` uses `aws ecr delete-repository --force`. This
   permanently deletes each selected repository and all images in it.
 - Review every resolved registry path before approving a push or deletion.
@@ -87,7 +87,7 @@ The scripts have different requirements:
 | --- | --- |
 | `push_to_ecr.sh` | AWS CLI v2, ORAS, Docker CLI with a running daemon, `zip`, `unzip`, and `jq`. It also uses `curl` if the airgap binary must be downloaded. |
 | `push_zst_to_ecr.sh` | A supported Palette CLI, AWS CLI, and a directory containing `.zst` files. The script explicitly rejects macOS. |
-| `push_from_url.sh` | A supported Palette CLI, AWS CLI, `curl`, OpenSSL, `zst_urls.txt`, and download credentials. |
+| `push_from_url.sh` | A supported Palette CLI, AWS CLI, `curl`, OpenSSL, a URL-list file, and download credentials. |
 | `delete_ecr_images.sh` | AWS CLI configured for the target account and region. |
 
 Only `push_to_ecr.sh` runs the shared prerequisite checker. It detects macOS,
@@ -241,30 +241,33 @@ this script; review the configuration before running it.
 
 ## Use case 4: Download, verify, and push bundles from URLs
 
-Add one URL per line to `zst_urls.txt` in the current working directory. Empty
-lines and lines beginning with `#` are ignored. Include both each `.zst` URL
-and its matching `.sig.bin` URL. The script does not accept an alternate URL
-file argument.
+Create a URL-list file with one URL per line. Empty lines and lines beginning
+with `#` are ignored. Include both each `.zst` URL and its matching `.sig.bin`
+URL. Pass that file as the script's only argument.
 
 Run:
 
 ```bash
-./push_from_url.sh ./bundles
+./push_from_url.sh ./zst_urls.txt
 ```
+
+Downloads are written to a `downloads/` directory beside the supplied URL
+file. For the example above, the destination is `./downloads/`.
 
 The script:
 
 1. Requires nonempty `DOWNLOAD_USER` and `DOWNLOAD_PASS`.
-2. Downloads every listed URL into `./bundles/downloads` using HTTP basic
+2. Resolves the supplied URL file and creates a sibling `downloads/` directory.
+3. Downloads every listed URL into that directory using HTTP basic
    authentication.
-3. Skips files already present locally without downloading or revalidating
+4. Skips files already present locally without downloading or revalidating
    them.
-4. Downloads the configured public key if necessary.
-5. For each `.zst`, looks for a sibling signature named
+5. Downloads the configured public key if necessary.
+6. For each `.zst`, looks for a sibling signature named
    `<bundle-name>.sig.bin`.
-6. Verifies available pairs and displays passed and failed signature counts.
-7. Authenticates the Palette CLI to ECR.
-8. Pushes all downloaded `.zst` files with `--insecure`.
+7. Verifies available pairs and displays passed and failed signature counts.
+8. Authenticates the Palette CLI to ECR.
+9. Pushes all downloaded `.zst` files with `--insecure`.
 
 This workflow sets `ECR_PACK_BASE="spectro-packs"` internally. Its destination
 is:
@@ -339,10 +342,10 @@ or committing.
 The retry helper creates temporary attempt logs under `/tmp`. Successful
 attempt logs are removed. Relevant failed output is replayed into the main log.
 
-Downloaded URL bundles are stored beneath:
+Downloaded URL bundles are stored beside the supplied URL file:
 
 ```text
-<bundle-dir>/downloads/
+<url-file-directory>/downloads/
 ```
 
 That generated directory is not ignored by a general `.gitignore` rule. Use a

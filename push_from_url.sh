@@ -1,11 +1,28 @@
 #!/bin/bash
 # download and push bundles
-# Usage: ./push-bundles.sh <bundle-dir> <ecr-account-id> <region> <base-path>
-# Example: ./push-bundles.sh ./bundles 103448924380 us-gov-west-1 cuff-airgap/spectro-packs
+# Usage: ./push_from_url.sh <zst-urls-file>
+# Example: ./push_from_url.sh ./zst_urls.txt
 # Build a bundle, copy urls to file, then download and push to ECR using this script.
 set -uo pipefail
 source ./common-config.sh
 source ./common-functions.sh
+
+if [[ $# -ne 1 ]]; then
+  echo "Usage: $0 <zst-urls-file>" >&2
+  exit 2
+fi
+
+BUNDLE_URL_FILE="$1"
+if [[ ! -f "${BUNDLE_URL_FILE}" ]]; then
+  echo "Error: URL file '${BUNDLE_URL_FILE}' not found." >&2
+  exit 1
+fi
+
+BUNDLE_URL_DIR="$(cd "$(dirname "${BUNDLE_URL_FILE}")" && pwd)"
+BUNDLE_URL_FILE="${BUNDLE_URL_DIR}/$(basename "${BUNDLE_URL_FILE}")"
+BUNDLE_DIR="${BUNDLE_URL_DIR}"
+DOWNLOAD_DIR="${BUNDLE_DIR}/downloads"
+mkdir -p "${DOWNLOAD_DIR}"
 
 ECR_PACK_BASE="spectro-packs"
 validateVar AWS_ACCOUNT
@@ -14,21 +31,15 @@ validateVar ECR_BASE_CONTENT_PATH warn || true
 validateVar ECR_IMAGE_BASE warn || true
 validateVar ECR_PACK_BASE warn || true
 validateVar ECR_REGISTRY
-validateVar DOWNLOAD_USER
-validateVar DOWNLOAD_PASS
+validateVar DOWNLOAD_USER fatal mask
+validateVar DOWNLOAD_PASS fatal mask
 
-export BUNDLE_DIR="${1:?Usage: $0 <bundle-dir>}" || echo "Bundle Directory: ${BUNDLE_DIR}"
-export BUNDLE_URL_FILE="zst_urls.txt" || echo "Bundle URL File: ${BUNDLE_URL_FILE}"
-#check for urls.txt file validation
-export BASE_PATH="${ECR_BASE_CONTENT_PATH:+${ECR_BASE_CONTENT_PATH%/}/}${ECR_PACK_BASE#/}" || echo "Base Content Path: ${BASE_PATH}"
+export BUNDLE_DIR
+export BUNDLE_URL_FILE
+export BASE_PATH="${ECR_BASE_CONTENT_PATH:+${ECR_BASE_CONTENT_PATH%/}/}${ECR_PACK_BASE#/}"
 
 
-echo "==> Downloading all .zst bundles from ${BUNDLE_URL_FILE} to ${BUNDLE_DIR}"
-
-if [[ ! -f "$BUNDLE_URL_FILE" ]]; then
-  echo "Error: File '$BUNDLE_URL_FILE' not found."
-  exit 1
-fi
+echo "==> Downloading all .zst bundles from ${BUNDLE_URL_FILE} to ${DOWNLOAD_DIR}"
 
 echo "Reading URLs from: $BUNDLE_URL_FILE"
 echo ""
@@ -38,12 +49,11 @@ while IFS= read -r url; do
   [[ -z "$url" || "$url" == \#* ]] && continue
 
   filename="${url##*/}"
-  mkdir -p "${BUNDLE_DIR}/downloads"
-  dest="${BUNDLE_DIR}/downloads/${filename}"
+  dest="${DOWNLOAD_DIR}/${filename}"
 
   # ── Skip if file already exists ──────────────────────────────────────────────
   if [[ -f "$dest" ]]; then
-    echo "SKIP  $filename (already exists) in ${BUNDLE_DIR}/downloads/)"
+    echo "SKIP  $filename (already exists in ${DOWNLOAD_DIR})"
     echo ""
     continue
   fi
@@ -57,8 +67,8 @@ done < "$BUNDLE_URL_FILE"
 
 echo "All downloads complete!"
 
-echo "Validating downloaded files in ${BUNDLE_DIR}..."
-PUBLIC_KEY_PATH="${BUNDLE_DIR}/downloads/${PUBLIC_KEY}"
+echo "Validating downloaded files in ${DOWNLOAD_DIR}..."
+PUBLIC_KEY_PATH="${DOWNLOAD_DIR}/${PUBLIC_KEY}"
 if [[ ! -f "${PUBLIC_KEY_PATH}" ]]; then
   echo "Public key not found. Downloading..."
   curl -fL "$PUBLIC_KEY_URL" -o "${PUBLIC_KEY_PATH}"
@@ -92,9 +102,9 @@ while IFS= read -r url; do
   if [[ "$filename" == *.zst ]]; then
     sigfile="${filename%.zst}.sig.bin"
 
-    zst_path="${BUNDLE_DIR}/downloads/${filename}"
-    sig_path="${BUNDLE_DIR}/downloads/${sigfile}"
-    key_path="${BUNDLE_DIR}/downloads/${PUBLIC_KEY}"
+    zst_path="${DOWNLOAD_DIR}/${filename}"
+    sig_path="${DOWNLOAD_DIR}/${sigfile}"
+    key_path="${DOWNLOAD_DIR}/${PUBLIC_KEY}"
 
     if [[ ! -f "$zst_path" ]]; then
       echo "SKIP  $filename (file not found: $zst_path)"
@@ -133,10 +143,10 @@ palette content registry-login \
   --password "$(aws ecr get-login-password \
   --region ${AWS_REGION})"
 
-echo "==> Pushing all .zst bundles from ${BUNDLE_DIR}/downloads/ to ${ECR_REGISTRY}/${BASE_PATH}"
+echo "==> Pushing all .zst bundles from ${DOWNLOAD_DIR} to ${ECR_REGISTRY}/${BASE_PATH}"
 
-for bundle in "${BUNDLE_DIR}"/downloads/*.zst; do
-  [[ -f "$bundle" ]] || { echo "No .zst files found in ${BUNDLE_DIR}/downloads/"; exit 1; }
+for bundle in "${DOWNLOAD_DIR}"/*.zst; do
+  [[ -f "$bundle" ]] || { echo "No .zst files found in ${DOWNLOAD_DIR}"; exit 1; }
   echo "--> Pushing: ${bundle}"
   palette content push \
     --file "${bundle}" \
@@ -147,4 +157,5 @@ done
 echo "==> All bundles pushed successfully."
 unset BUNDLE_DIR
 unset BUNDLE_URL_FILE
+unset DOWNLOAD_DIR
 unset BASE_PATH

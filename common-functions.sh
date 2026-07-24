@@ -17,6 +17,12 @@ validateVar() {
   local display_mode="${3:-plain}"
   local value="${!var_name:-}"
 
+  case "${var_name}" in
+    DOWNLOAD_USER|DOWNLOAD_PASS)
+      display_mode="mask"
+      ;;
+  esac
+
   if [[ -z "$var_name" ]]; then
     echo "❌ Error: validateVar requires a variable name" >&2
     [[ "$mode" == "fatal" ]] && exit 1
