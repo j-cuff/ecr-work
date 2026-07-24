@@ -9,13 +9,19 @@ set -euo pipefail
 source ./common-config.sh
 source ./common-functions.sh
 
+os_type="$(detect_os)"
+if [[ "${os_type}" == "macos" ]]; then
+  echo "ERROR: push_zst_to_ecr.sh is not supported on macOS because the Palette CLI is not available as a compatible multi-architecture binary." >&2
+  echo "Run this script from a supported Linux environment instead." >&2
+  exit 1
+fi
+
 validateVar AWS_ACCOUNT
 validateVar AWS_REGION
 validateVar ECR_BASE_CONTENT_PATH warn || true
 validateVar ECR_IMAGE_BASE warn || true
 validateVar ECR_PACK_BASE warn || true
 validateVar ECR_REGISTRY
-validateVar 
 
 BUNDLE_DIR="${1:?Usage: $0 <bundle-dir>}" || echo "Bundle Directory: ${BUNDLE_DIR}"
 BASE_PATH="${ECR_BASE_CONTENT_PATH:+${ECR_BASE_CONTENT_PATH%/}/}${ECR_PACK_BASE#/}" || echo "Base Content Path: ${BASE_PATH}"

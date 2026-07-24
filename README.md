@@ -197,9 +197,14 @@ Place one or more `.zst` files in a directory and run:
 ./push_zst_to_ecr.sh ./bundles
 ```
 
+This workflow is not supported on macOS because the required Palette CLI is
+not available as a compatible multi-architecture binary. The script detects
+macOS and exits before validation, authentication, or bundle processing. Run it
+from a supported Linux environment instead.
+
 The script:
 
-1. Loads shared ECR configuration.
+1. Loads shared ECR configuration and rejects macOS.
 2. Logs the Palette CLI into ECR using an AWS ECR authorization token.
 3. Pushes every `./bundles/*.zst` file with `palette content push`.
 4. Stops if the directory contains no `.zst` files.
@@ -212,10 +217,6 @@ The destination is:
 
 Set `ECR_PACK_BASE="spectro-packs"` in `common-config.sh` when the intended
 destination is the standard pack root.
-
-Known current issue: `push_zst_to_ecr.sh` contains an empty `validateVar` call,
-which causes validation to stop before the push. Correct that call before using
-this workflow.
 
 ## Use case 4: Download, verify, and push bundles from URLs
 
