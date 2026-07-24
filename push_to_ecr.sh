@@ -15,6 +15,7 @@ function usage() {
   echo "Usage: $0 <version> [--skip-extraction|-s]"
   echo ""
   echo "Examples:"
+  echo "  $0 (If common-config Version is set)"
   echo "  $0 4.9.18"
   echo "  $0 4.9.18 --skip-extraction"
   echo "  $0 4.9.18 -s"

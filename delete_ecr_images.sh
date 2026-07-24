@@ -1,5 +1,5 @@
 #!/bin/bash
-# Deletes ECR repositories at or below the pack path configured in common-config.sh.
+# Deletes ECR repositories at or below ECR_DELETE_PATH from common-config.sh.
 #
 # Prerequisites:
 #   - AWS CLI v2 configured with credentials that have ecr:DescribeRepositories + ecr:DeleteRepository
@@ -14,14 +14,15 @@ source "${SCRIPT_DIR}/common-config.sh"
 : "${AWS_ACCOUNT:?AWS_ACCOUNT must be set in common-config.sh}"
 : "${AWS_REGION:?AWS_REGION must be set in common-config.sh}"
 : "${ECR_REGISTRY:?ECR_REGISTRY must be set in common-config.sh}"
-: "${ECR_BASE_CONTENT_PATH:?ECR_BASE_CONTENT_PATH must be set in common-config.sh}"
+: "${ECR_DELETE_PATH:?ECR_DELETE_PATH must be set in common-config.sh}"
 
-PACK_PATH="${ECR_BASE_CONTENT_PATH%/}"
-if [[ -n "${ECR_PACK_BASE:-}" ]]; then
-  PACK_PATH="${PACK_PATH}/${ECR_PACK_BASE#/}"
-  PACK_PATH="${PACK_PATH%/}"
+PREFIX="${ECR_DELETE_PATH#/}"
+PREFIX="${PREFIX%/}"
+if [[ ! "${PREFIX}" =~ ^[a-z0-9]+([._/-][a-z0-9]+)*$ ]]; then
+  echo "ERROR: ECR_DELETE_PATH is not a valid ECR repository prefix: ${ECR_DELETE_PATH}" >&2
+  echo "Set it relative to ECR_REGISTRY, for example: cuff-airgap/spectro-packs" >&2
+  exit 2
 fi
-PREFIX="${PACK_PATH}/spectro-packs"
 DELETE_PATH="${ECR_REGISTRY}/${PREFIX}"
 
 # Optional: set a named profile if needed

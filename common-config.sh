@@ -16,3 +16,8 @@ SKIP_EXTRACTION="false"
 BINARY="./airgap-vertex-v${VERTEX_VERSION}.bin" # set to true to skip extraction of the binary if it already exists
 PUBLIC_KEY="spectro_public_key.pem"
 PUBLIC_KEY_URL="https://artifact-studio.spectrocloud.com/spectro_public_key.pem"
+#####################################
+# Specific for delete_ecr_images.sh #
+#####################################
+#example: ECR_DELETE_PATH="${ECR_REGISTRY}/<BASE_CONTENT_PATH>/spectro-packs"
+ECR_DELETE_PATH="${ECR_REGISTRY}/cuff-airgap/spectro-packs"

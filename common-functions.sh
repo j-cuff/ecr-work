@@ -488,14 +488,22 @@ function print_prerequisite_install_instructions() {
         echo "    https://docs.docker.com/desktop/setup/install/mac-install/"
         ;;
       macos:oras)
-        echo "  ORAS:"
-        echo "    brew install oras"
-        echo "    https://oras.land/docs/installation/"
+        echo "  ORAS CLI v1.0.0 (exact version required):"
+        echo "    Download the darwin archive for your architecture:"
+        echo "    https://github.com/oras-project/oras/releases/tag/v1.0.0"
         ;;
       macos:jq)
         echo "  jq:"
         echo "    brew install jq"
         echo "    https://jqlang.org/download/"
+        ;;
+      macos:zip)
+        echo "  zip:"
+        echo "    macOS normally includes zip; otherwise run: brew install zip"
+        ;;
+      macos:unzip)
+        echo "  unzip:"
+        echo "    macOS normally includes unzip; otherwise run: brew install unzip"
         ;;
       macos:aws)
         echo "  AWS CLI v2:"
@@ -508,15 +516,20 @@ function print_prerequisite_install_instructions() {
         echo "    https://docs.docker.com/engine/install/"
         ;;
       linux:oras)
-        echo "  ORAS:"
-        echo "    sudo snap install oras --classic"
-        echo "    Or install a release artifact from https://oras.land/docs/installation/"
+        echo "  ORAS CLI v1.0.0 (exact version required):"
+        echo "    Download the linux archive for your architecture:"
+        echo "    https://github.com/oras-project/oras/releases/tag/v1.0.0"
         ;;
       linux:jq)
         echo "  jq:"
         echo "    Debian/Ubuntu: sudo apt-get update && sudo apt-get install -y jq"
         echo "    Fedora/RHEL:   sudo dnf install -y jq"
         echo "    https://jqlang.org/download/"
+        ;;
+      linux:zip|linux:unzip)
+        echo "  ${tool}:"
+        echo "    Debian/Ubuntu: sudo apt-get update && sudo apt-get install -y ${tool}"
+        echo "    Fedora/RHEL:   sudo dnf install -y ${tool}"
         ;;
       linux:aws)
         echo "  AWS CLI v2:"
@@ -528,14 +541,18 @@ function print_prerequisite_install_instructions() {
         echo "    https://docs.docker.com/desktop/features/wsl/"
         ;;
       wsl:oras)
-        echo "  ORAS inside WSL:"
-        echo "    sudo snap install oras --classic"
-        echo "    Or install a Linux release artifact from https://oras.land/docs/installation/"
+        echo "  ORAS CLI v1.0.0 inside WSL (exact version required):"
+        echo "    Download the linux archive for your architecture:"
+        echo "    https://github.com/oras-project/oras/releases/tag/v1.0.0"
         ;;
       wsl:jq)
         echo "  jq inside WSL:"
         echo "    sudo apt-get update && sudo apt-get install -y jq"
         echo "    https://jqlang.org/download/"
+        ;;
+      wsl:zip|wsl:unzip)
+        echo "  ${tool} inside WSL:"
+        echo "    sudo apt-get update && sudo apt-get install -y ${tool}"
         ;;
       wsl:aws)
         echo "  AWS CLI v2 inside WSL:"
@@ -546,8 +563,9 @@ function print_prerequisite_install_instructions() {
         echo "    https://docs.docker.com/desktop/setup/install/windows-install/"
         ;;
       windows:oras)
-        echo "  ORAS:"
-        echo "    Install the Windows release artifact from https://oras.land/docs/installation/"
+        echo "  ORAS CLI v1.0.0 (exact version required):"
+        echo "    Install the Windows archive from:"
+        echo "    https://github.com/oras-project/oras/releases/tag/v1.0.0"
         ;;
       windows:jq)
         echo "  jq:"
@@ -558,6 +576,10 @@ function print_prerequisite_install_instructions() {
         echo "  AWS CLI v2:"
         echo "    https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html"
         ;;
+      windows:zip|windows:unzip)
+        echo "  ${tool}:"
+        echo "    Install a compatible zip utility and add it to PATH."
+        ;;
       *:docker)
         echo "  Docker: https://docs.docker.com/get-started/get-docker/"
         ;;
@@ -566,6 +588,9 @@ function print_prerequisite_install_instructions() {
         ;;
       *:jq)
         echo "  jq: https://jqlang.org/download/"
+        ;;
+      *:zip|*:unzip)
+        echo "  ${tool}: install it with your operating system package manager."
         ;;
       *:aws)
         echo "  AWS CLI v2: https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html"
@@ -577,18 +602,48 @@ function print_prerequisite_install_instructions() {
 function check_prerequisites() {
   local os_type="${1:-$(detect_os)}"
   local tool
+  local aws_version_output=""
   local docker_daemon_ready=true
-  local -a missing_tools=()
+  local line
+  local oras_version=""
+  local oras_version_output=""
+  local -a problem_tools=()
 
   echo "Checking required command-line tools for ${os_type}..."
-  for tool in docker oras jq aws; do
+  for tool in docker oras zip unzip jq aws; do
     if command -v "${tool}" >/dev/null 2>&1; then
       echo "✅ ${tool}: $(command -v "${tool}")"
     else
       echo "❌ ${tool}: not found" >&2
-      missing_tools+=("${tool}")
+      problem_tools+=("${tool}")
     fi
   done
+
+  if command -v aws >/dev/null 2>&1; then
+    aws_version_output="$(aws --version 2>&1 || true)"
+    if [[ "${aws_version_output}" =~ aws-cli/2\. ]]; then
+      echo "✅ AWS CLI major version: 2"
+    else
+      echo "❌ AWS CLI v2 is required; found: ${aws_version_output:-unknown version}" >&2
+      problem_tools+=("aws")
+    fi
+  fi
+
+  if command -v oras >/dev/null 2>&1; then
+    oras_version_output="$(oras version 2>&1 || true)"
+    while IFS= read -r line; do
+      if [[ "${line}" =~ ^Version:[[:space:]]*v?([^[:space:]]+)[[:space:]]*$ ]]; then
+        oras_version="${BASH_REMATCH[1]}"
+        break
+      fi
+    done <<<"${oras_version_output}"
+    if [[ "${oras_version}" == "1.0.0" ]]; then
+      echo "✅ ORAS CLI version: ${oras_version}"
+    else
+      echo "❌ ORAS CLI v1.0.0 is required; found: ${oras_version:-unknown version}" >&2
+      problem_tools+=("oras")
+    fi
+  fi
 
   if command -v docker >/dev/null 2>&1 &&
     ! docker info >/dev/null 2>&1; then
@@ -596,8 +651,8 @@ function check_prerequisites() {
     echo "❌ docker: CLI is installed, but the Docker daemon is unavailable" >&2
   fi
 
-  if ((${#missing_tools[@]} > 0)); then
-    print_prerequisite_install_instructions "${os_type}" "${missing_tools[@]}"
+  if ((${#problem_tools[@]} > 0)); then
+    print_prerequisite_install_instructions "${os_type}" "${problem_tools[@]}"
   fi
 
   if [[ "${docker_daemon_ready}" != "true" ]]; then
@@ -618,7 +673,7 @@ function check_prerequisites() {
     esac
   fi
 
-  if ((${#missing_tools[@]} > 0)) ||
+  if ((${#problem_tools[@]} > 0)) ||
     [[ "${docker_daemon_ready}" != "true" ]]; then
     echo ""
     echo "Prerequisite check failed. Install or start the items above and rerun."
