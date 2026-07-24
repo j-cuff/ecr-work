@@ -6,9 +6,14 @@ source ./common-config.sh
 source ./common-functions.sh
 validateVar VERTEX_VERSION
 timestamp=$(date +%Y%m%d%H%M%S)
-touch push_to_ecr-$VERTEX_VERSION-$timestamp.log
-exec > >(tee -a push_to_ecr-$VERTEX_VERSION-$timestamp.log) 2>&1
+LOG_DIR="${SCRIPT_DIR}/logs"
+LOG_FILE="${LOG_DIR}/push_to_ecr-${VERTEX_VERSION}-${timestamp}.log"
+mkdir -p "${LOG_DIR}"
+touch "${LOG_FILE}"
+export LOG_FILE
+exec > >(tee -a "${LOG_FILE}") 2>&1
 date
+echo "Log file: ${LOG_FILE}"
 os_type=$(detect_os)
 
 function usage() {

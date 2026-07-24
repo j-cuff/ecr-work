@@ -140,7 +140,7 @@ argument. The workflow also reconstructs `BINARY` as
 
 The workflow:
 
-1. Creates `push_to_ecr-<version>-<timestamp>.log`.
+1. Creates `logs/push_to_ecr-<version>-<timestamp>.log`.
 2. Detects the operating system.
 3. Validates shared configuration, masking download credentials.
 4. Checks prerequisites and required tool versions.
@@ -325,12 +325,15 @@ Any confirmation mismatch aborts before deletion.
 `push_to_ecr.sh` writes:
 
 ```text
-push_to_ecr-<vertex-version>-<YYYYmmddHHMMSS>.log
+logs/push_to_ecr-<vertex-version>-<YYYYmmddHHMMSS>.log
 ```
 
-The full console stream is copied to this file. The `.gitignore` excludes:
+The `logs/` directory is created automatically beneath the directory containing
+the script. The full console stream is copied to this file, and the absolute log
+path is printed when execution starts. The `.gitignore` excludes:
 
-- `push_to_ecr-*.log`
+- the `logs/` directory
+- legacy root-level `push_to_ecr-*.log` files
 - extracted `spectroairgap-*` directories
 - the currently listed `airgap-vertex-v4.9.18.bin`
 - the explicitly listed bundle and signature filenames

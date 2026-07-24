@@ -15,3 +15,4 @@ ubuntu-aws-22.04.sig.bin
 ubuntu-aws-22.04.zst
 **/spectroairgap-*/
 push_to_ecr-*.log
+/logs/
