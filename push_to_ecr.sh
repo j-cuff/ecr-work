@@ -1,9 +1,46 @@
 #! /bin/bash
-# Usage: ./push_to_ecr.sh <version>
+# Usage: ./push_to_ecr.sh [version] [--skip-extraction|-s]
 # Example: ./push_to_ecr.sh 4.9.18
 set -euo pipefail
 source ./common-config.sh
 source ./common-functions.sh
+
+function usage() {
+  echo "Usage: $0 [version] [--skip-extraction|-s]"
+  echo ""
+  echo "Examples:"
+  echo "  $0"
+  echo "  $0 4.9.18"
+  echo "  $0 4.9.18 --skip-extraction"
+  echo "  $0 4.9.18 -s"
+}
+
+configured_vertex_version="${VERTEX_VERSION:-}"
+default_binary="./airgap-vertex-v${configured_vertex_version}.bin"
+default_airgap_dir="${SCRIPT_DIR}/spectroairgap-${configured_vertex_version}"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -s|--skip-extraction) SKIP_EXTRACTION=true ;;
+    -h|--help) usage; exit 0 ;;
+    -*) echo "Unknown option: $1" >&2; usage >&2; exit 1 ;;
+    *) [[ -z "${VERSION:-}" ]] && VERSION="$1" || { echo "Unexpected argument: $1" >&2; usage >&2; exit 1; } ;;
+  esac
+  shift
+done
+
+if [[ -n "${VERSION:-}" ]]; then
+  VERTEX_VERSION="${VERSION}"
+
+  if [[ "${BINARY:-}" == "${default_binary}" ]]; then
+    BINARY="./airgap-vertex-v${VERTEX_VERSION}.bin"
+  fi
+
+  if [[ "${AIRGAP_DIR:-}" == "${default_airgap_dir}" ]]; then
+    AIRGAP_DIR="${SCRIPT_DIR}/spectroairgap-${VERTEX_VERSION}"
+  fi
+fi
+
 validateVar VERTEX_VERSION
 timestamp=$(date +%Y%m%d%H%M%S)
 LOG_DIR="${SCRIPT_DIR}/logs"
@@ -15,26 +52,6 @@ exec > >(tee -a "${LOG_FILE}") 2>&1
 date
 echo "Log file: ${LOG_FILE}"
 os_type=$(detect_os)
-
-function usage() {
-  echo "Usage: $0 <version> [--skip-extraction|-s]"
-  echo ""
-  echo "Examples:"
-  echo "  $0 (If common-config Version is set)"
-  echo "  $0 4.9.18"
-  echo "  $0 4.9.18 --skip-extraction"
-  echo "  $0 4.9.18 -s"
-}
-
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    -s|--skip-extraction) SKIP_EXTRACTION=true ;;
-    -h|--help) usage; exit 0 ;;
-    -*) echo "Unknown option: $1" >&2; usage >&2; exit 1 ;;
-    *) [[ -z "${VERSION:-}" ]] && VERSION="$1" || { echo "Unexpected argument: $1" >&2; usage >&2; exit 1; } ;;
-  esac
-  shift
-done
 
 
 #Step 1: Validate Variables
@@ -74,11 +91,18 @@ export ECR_IMAGE_REGISTRY=${ECR_REGISTRY}
 export ECR_IMAGE_BASE="${ECR_BASE_CONTENT_PATH:+${ECR_BASE_CONTENT_PATH%/}/}${ECR_IMAGE_BASE#/}"
 export ECR_IMAGE_REGISTRY_REGION=${AWS_REGION}
 export ECR_PACK_REGISTRY=${ECR_REGISTRY}
-export ECR_PACK_BASE="${ECR_BASE_CONTENT_PATH:+${ECR_BASE_CONTENT_PATH%/}/}${ECR_PACK_BASE#/}"
+airgap_pack_base="${ECR_BASE_CONTENT_PATH:+${ECR_BASE_CONTENT_PATH%/}/}${ECR_PACK_BASE#/}"
+airgap_pack_base="${airgap_pack_base%/}"
+if [[ "${airgap_pack_base}" == "spectro-packs" ]]; then
+  airgap_pack_base=""
+elif [[ "${airgap_pack_base}" == */spectro-packs ]]; then
+  airgap_pack_base="${airgap_pack_base%/spectro-packs}"
+fi
+export ECR_PACK_BASE="${airgap_pack_base}"
 export ECR_PACK_REGISTRY_REGION=${AWS_REGION}
 export SCRIPT_DIR="${SCRIPT_DIR}"
 export AIRGAP_DIR="${AIRGAP_DIR}"
-export BINARY="./airgap-vertex-v${VERTEX_VERSION}.bin"
+export BINARY="${BINARY}"
 echo "ECR configuration:"
 echo "  ECR_IMAGE_REGISTRY=${ECR_IMAGE_REGISTRY}"
 echo "  ECR_IMAGE_BASE=${ECR_IMAGE_BASE}"
@@ -89,7 +113,7 @@ echo "  ECR_PACK_REGISTRY_REGION=${ECR_PACK_REGISTRY_REGION}"
 
 # Checking for the binary and extracting it if needed
 if [[ "${SKIP_EXTRACTION}" == "false" ]]; then
-  ensureVertexBinary "$VERTEX_VERSION"
+  ensureVertexBinary "${VERTEX_VERSION}" "${BINARY}"
   extract_binary "${BINARY}" "${AIRGAP_DIR}"
 else
   echo "Skipping binary extraction."

@@ -50,16 +50,14 @@ Edit `common-config.sh` before running the scripts.
 | `ECR_REGISTRY` | Registry hostname derived from account and region. | `<account-id>.dkr.ecr.<region>.amazonaws.com` |
 | `ECR_BASE_CONTENT_PATH` | Root repository namespace. | `palette-airgap` |
 | `ECR_IMAGE_BASE` | Image namespace below the base content path. | `spectro-images` |
-| `ECR_PACK_BASE` | Optional pack namespace appended below `ECR_BASE_CONTENT_PATH`. | Empty for the full airgap push; `spectro-packs` for `push_zst_to_ecr.sh` |
+| `ECR_PACK_BASE` | Pack namespace used by direct bundle pushes. The full airgap workflow normalizes the final `spectro-packs` segment because its extracted setup adds that segment itself. | `spectro-packs` |
 | `ECR_DELETE_PATH` | Exact repository prefix that `delete_ecr_images.sh` may delete, relative to `ECR_REGISTRY`. A leading or trailing slash is normalized away. | `/palette-airgap/spectro-packs` |
 | `DOWNLOAD_USER` | Optional for `push_to_ecr.sh`; required by `push_from_url.sh`. | Set locally |
 | `DOWNLOAD_PASS` | Optional for `push_to_ecr.sh`; required by `push_from_url.sh`. | Set locally |
 | `SCRIPT_DIR` | Absolute directory containing the scripts, derived automatically. | Do not normally override |
 | `AIRGAP_DIR` | Extraction directory for the airgap binary. | `spectroairgap-4.9.18` |
 | `SKIP_EXTRACTION` | Reuse an existing extraction directory when `true`. | `false` |
-| `BINARY` | Airgap installer filename. | `airgap-vertex-v4.9.18.bin` |
-| `PUBLIC_KEY` | Public key filename used to verify bundle signatures. | `spectro_public_key.pem` |
-| `PUBLIC_KEY_URL` | Download URL for the public verification key. | Artifact Studio public-key URL |
+| `BINARY` | Airgap installer path used by `push_to_ecr.sh`. | `./airgap-vertex-v4.9.18.bin` |
 
 The full-push workflow resolves the default destinations as:
 
@@ -68,14 +66,13 @@ Images: <registry>/<base-content-path>/spectro-images/...
 Packs:  <registry>/<base-content-path>/spectro-packs/archive/...
 ```
 
-The scripts do not use `ECR_PACK_BASE` identically:
+The shared default `ECR_PACK_BASE="spectro-packs"` now resolves consistently:
 
-- `push_to_ecr.sh` appends it below `ECR_BASE_CONTENT_PATH`, and the extracted
-  airgap setup adds its own `spectro-packs` repository structure. Keep
-  `ECR_PACK_BASE` empty for the default
-  `<base-content-path>/spectro-packs/...` layout.
+- `push_to_ecr.sh` removes a final `spectro-packs` segment from the parent path
+  passed to the extracted airgap setup because that setup adds
+  `spectro-packs/archive` itself.
 - `push_zst_to_ecr.sh` pushes directly to
-  `<ECR_BASE_CONTENT_PATH>/<ECR_PACK_BASE>`.
+  `<ECR_BASE_CONTENT_PATH>/spectro-packs`.
 - `push_from_url.sh` overrides `ECR_PACK_BASE` with `spectro-packs` regardless
   of the value in `common-config.sh`.
 
@@ -87,7 +84,7 @@ The scripts have different requirements:
 | --- | --- |
 | `push_to_ecr.sh` | AWS CLI v2, ORAS, Docker CLI with a running daemon, `zip`, `unzip`, and `jq`. It also uses `curl` if the airgap binary must be downloaded. |
 | `push_zst_to_ecr.sh` | A supported Palette CLI, AWS CLI, and a directory containing `.zst` files. The script explicitly rejects macOS. |
-| `push_from_url.sh` | A supported Palette CLI, AWS CLI, `curl`, OpenSSL, a URL-list file, and download credentials. |
+| `push_from_url.sh` | A supported Palette CLI, AWS CLI, `curl`, OpenSSL, a URL-list file, download credentials, and an included `downloads/spectro_public_key.pem`. |
 | `delete_ecr_images.sh` | AWS CLI configured for the target account and region. |
 
 Only `push_to_ecr.sh` runs the shared prerequisite checker. It detects macOS,
@@ -132,11 +129,10 @@ The script also accepts the documented version argument:
 ./push_to_ecr.sh 4.9.18
 ```
 
-Current behavior still uses `VERTEX_VERSION` from `common-config.sh` as the
-effective version, so keep that value synchronized with any positional version
-argument. The workflow also reconstructs `BINARY` as
-`./airgap-vertex-v<VERTEX_VERSION>.bin`; changing only `BINARY` in
-`common-config.sh` does not select a different filename.
+The positional version overrides `VERTEX_VERSION`. When `BINARY` and
+`AIRGAP_DIR` still match the defaults derived from the configured version, they
+are recalculated for the positional version. Explicit custom paths are
+preserved and used as configured.
 
 The workflow:
 
@@ -148,8 +144,8 @@ The workflow:
 6. Enables a Docker wrapper that skips image tags already present in ECR.
 7. Locates the airgap binary or offers to download it.
 8. Extracts the binary into `AIRGAP_DIR`.
-9. Replaces `ecr-public` with `ecr` in the extracted functions on macOS and
-   Linux, and patches push messages to show full destination paths.
+9. Replaces `ecr-public` with `ecr` in the extracted functions on macOS, Linux,
+   WSL, and Windows, and patches push messages to show full destination paths.
 10. Displays the exact image and pack roots.
 11. Requires confirmation before any pack or image push.
 12. Runs `apply_pack.sh` and `apply_patch.sh`.
@@ -259,6 +255,9 @@ Run:
 
 Downloads are written to a `downloads/` directory beside the supplied URL
 file. For the example above, the destination is `./downloads/`.
+The repository includes `downloads/spectro_public_key.pem`; keep that file
+beside the downloaded bundles and signatures. The script does not download or
+configure a public key.
 
 The script:
 
@@ -268,12 +267,17 @@ The script:
    authentication.
 4. Skips files already present locally without downloading or revalidating
    them.
-5. Downloads the configured public key if necessary.
+5. Requires the included `downloads/spectro_public_key.pem`.
 6. For each `.zst`, looks for a sibling signature named
    `<bundle-name>.sig.bin`.
-7. Verifies available pairs and displays passed and failed signature counts.
+7. Verifies every listed bundle, records missing or invalid signatures, and
+   continues checking the remaining entries.
 8. Authenticates the Palette CLI to ECR.
-9. Pushes all downloaded `.zst` files with `--insecure`.
+9. Pushes only successfully verified `.zst` files with `--insecure`.
+10. Records an individual push failure and continues with the remaining
+    verified bundles.
+11. Prints verification and push totals, then exits nonzero if any bundle
+    failed verification or upload.
 
 This workflow sets `ECR_PACK_BASE="spectro-packs"` internally. Its destination
 is:
@@ -284,14 +288,14 @@ is:
 
 Important limitations in the current implementation:
 
-- A failed signature increments the failure count, but does not stop the push.
-- A missing bundle or signature is reported as `SKIP` and is not included in
-  the failure count.
-- The download loop does not use `curl --fail`, and the script does not use
-  `set -e`, so a failed download might not stop the workflow.
+- The download loop does not use `curl --fail`, so an HTTP error response might
+  be saved as a file even though transport-level download failures stop the
+  script.
 - The script does not ask for destination confirmation.
 
-Review download and verification output before allowing the push to continue.
+Missing or invalid listed bundles are not pushed, and unlisted `.zst` files in
+the download directory are ignored. A partially successful batch finishes
+processing all verified bundles but returns a nonzero exit status.
 
 ## Use case 5: Delete the configured pack repository tree
 
@@ -341,12 +345,13 @@ path is printed when execution starts. The `.gitignore` excludes:
 - the `logs/` directory
 - legacy root-level `push_to_ecr-*.log` files
 - extracted `spectroairgap-*` directories
-- the currently listed `airgap-vertex-v4.9.18.bin`
+- all `airgap-vertex-v*.bin` files
+- `.zst` and `.sig.bin` artifacts directly beneath any `downloads/` directory
+- temporary `downloads/tmp/` extraction trees
 - the explicitly listed bundle and signature filenames
 
-The binary and bundle ignore entries are not general wildcard rules. If the
-configured version or bundle names change, update `.gitignore` before running
-or committing.
+The explicit root-level bundle entries are retained for existing workflows,
+while URL-workflow output is covered by general `downloads/` rules.
 
 The retry helper creates temporary attempt logs under `/tmp`. Successful
 attempt logs are removed. Relevant failed output is replayed into the main log.
@@ -357,9 +362,9 @@ Downloaded URL bundles are stored beside the supplied URL file:
 <url-file-directory>/downloads/
 ```
 
-That generated directory is not ignored by a general `.gitignore` rule. Use a
-disposable bundle directory or add an appropriate repository-specific ignore
-entry before downloading sensitive or large artifacts.
+Downloaded `.zst` files, `.sig.bin` files, and temporary extraction trees are
+ignored. The public verification key remains trackable. Review other generated
+file types before committing.
 
 ## Troubleshooting
 

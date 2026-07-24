@@ -1,4 +1,4 @@
-airgap-vertex-v4.9.18.bin
+airgap-vertex-v*.bin
 cert-manager-1.19.3.sig.bin
 cert-manager-1.19.3.zst
 cni-cilium-fips-1.19.1.sig.bin
@@ -16,3 +16,6 @@ ubuntu-aws-22.04.zst
 **/spectroairgap-*/
 push_to_ecr-*.log
 /logs/
+**/downloads/*.zst
+**/downloads/*.sig.bin
+**/downloads/tmp/

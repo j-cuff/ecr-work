@@ -68,21 +68,10 @@ done < "$BUNDLE_URL_FILE"
 echo "All downloads complete!"
 
 echo "Validating downloaded files in ${DOWNLOAD_DIR}..."
-PUBLIC_KEY_PATH="${DOWNLOAD_DIR}/${PUBLIC_KEY}"
-if [[ ! -f "${PUBLIC_KEY_PATH}" ]]; then
-  echo "Public key not found. Downloading..."
-  curl -fL "$PUBLIC_KEY_URL" -o "${PUBLIC_KEY_PATH}"
-
-  if [[ ! -f "${PUBLIC_KEY_PATH}" ]]; then
-    echo "Error: Failed to download '${PUBLIC_KEY}'. Cannot verify signatures."
-    exit 1
-  fi
-
-  chmod 644 "${PUBLIC_KEY_PATH}"
-
-  echo "Public key saved: ${PUBLIC_KEY_PATH}"
-else
-  echo "Public key already exists: ${PUBLIC_KEY_PATH}"
+if [[ ! -f "${DOWNLOAD_DIR}/spectro_public_key.pem" ]]; then
+  echo "ERROR: Required public key not found: ${DOWNLOAD_DIR}/spectro_public_key.pem" >&2
+  echo "Include spectro_public_key.pem in the downloads directory before running this script." >&2
+  exit 1
 fi
 
 echo ""
@@ -92,6 +81,8 @@ echo ""
 
 passed=0
 failed=0
+verified_bundles=()
+verification_failures=()
 
 while IFS= read -r url; do
   [[ -z "$url" || "$url" == \#* ]] && continue
@@ -104,37 +95,53 @@ while IFS= read -r url; do
 
     zst_path="${DOWNLOAD_DIR}/${filename}"
     sig_path="${DOWNLOAD_DIR}/${sigfile}"
-    key_path="${DOWNLOAD_DIR}/${PUBLIC_KEY}"
 
     if [[ ! -f "$zst_path" ]]; then
-      echo "SKIP  $filename (file not found: $zst_path)"
+      echo "FAIL  $filename (file not found: $zst_path)"
+      failed=$((failed + 1))
+      verification_failures+=("${filename}: bundle file not found")
       continue
     fi
 
     if [[ ! -f "$sig_path" ]]; then
-      echo "SKIP  $filename (signature not found: $sig_path)"
+      echo "FAIL  $filename (signature not found: $sig_path)"
+      failed=$((failed + 1))
+      verification_failures+=("${filename}: signature not found")
       continue
     fi
 
-    result=$(
+    if result="$(
       openssl dgst -sha256 \
-        -verify "$key_path" \
+        -verify "${DOWNLOAD_DIR}/spectro_public_key.pem" \
         -signature "$sig_path" \
         "$zst_path" 2>&1
-    )
-
-    if [[ "$result" == "Verified OK" ]]; then
+    )"; then
       echo "OK    $filename"
       passed=$((passed + 1))
+      verified_bundles+=("${zst_path}")
     else
       echo "FAIL  $filename ($result)"
       failed=$((failed + 1))
+      verification_failures+=("${filename}: ${result}")
     fi
   fi
 done < "$BUNDLE_URL_FILE"
 
 echo ""
 echo "Results: $passed passed, $failed failed"
+
+if ((${#verification_failures[@]} > 0)); then
+  echo "Verification failures:"
+  for verification_failure in "${verification_failures[@]}"; do
+    echo "  - ${verification_failure}"
+  done
+fi
+
+if ((${#verified_bundles[@]} == 0)); then
+  echo "ERROR: No verified .zst bundles are available to push." >&2
+  exit 1
+fi
+
 echo "==> Authenticating to ECR..."
 
 palette content registry-login \
@@ -145,14 +152,42 @@ palette content registry-login \
 
 echo "==> Pushing all .zst bundles from ${DOWNLOAD_DIR} to ${ECR_REGISTRY}/${BASE_PATH}"
 
-for bundle in "${DOWNLOAD_DIR}"/*.zst; do
-  [[ -f "$bundle" ]] || { echo "No .zst files found in ${DOWNLOAD_DIR}"; exit 1; }
+successful_pushes=0
+push_failures=()
+
+for bundle in "${verified_bundles[@]}"; do
   echo "--> Pushing: ${bundle}"
-  palette content push \
+  if palette content push \
     --file "${bundle}" \
     --registry "${ECR_REGISTRY}/${BASE_PATH}" \
-    --insecure
+    --insecure; then
+    successful_pushes=$((successful_pushes + 1))
+    echo "--> Push succeeded: ${bundle}"
+  else
+    push_rc=$?
+    push_failures+=("${bundle} (exit code ${push_rc})")
+    echo "ERROR: Push failed for ${bundle} with exit code ${push_rc}. Continuing with the remaining verified bundles." >&2
+  fi
 done
+
+echo ""
+echo "==> Bundle push summary"
+echo "    Verified:        ${passed}"
+echo "    Verification failures: ${failed}"
+echo "    Push succeeded:  ${successful_pushes}"
+echo "    Push failed:     ${#push_failures[@]}"
+
+if ((${#push_failures[@]} > 0)); then
+  echo "Push failures:"
+  for push_failure in "${push_failures[@]}"; do
+    echo "  - ${push_failure}"
+  done
+fi
+
+if ((failed > 0 || ${#push_failures[@]} > 0)); then
+  echo "ERROR: Bundle processing completed with failures." >&2
+  exit 1
+fi
 
 echo "==> All bundles pushed successfully."
 unset BUNDLE_DIR

@@ -195,11 +195,17 @@ function patch_functions_file() {
   fi
 
   echo "Patching ${functions_file}: replacing ecr-public with ecr"
-  if [[ $os_type == "macos" ]]; then
-    sed -i '' "s/ecr-public/ecr/g" "${functions_file}"
-  elif [[ $os_type == "linux" ]]; then
-    sed -i "s/ecr-public/ecr/g" "${functions_file}"
-  fi
+  case "${os_type}" in
+    macos)
+      sed -i '' "s/ecr-public/ecr/g" "${functions_file}"
+      ;;
+    linux|wsl|windows)
+      sed -i "s/ecr-public/ecr/g" "${functions_file}"
+      ;;
+    *)
+      fail "Unsupported operating system for patching ${functions_file}: ${os_type}"
+      ;;
+  esac
 
   echo "Patching ${functions_file}: displaying exact image and pack destinations"
   patch_push_destination_output "${functions_file}"
@@ -220,9 +226,12 @@ function create_ecr_repo() {
     return 0
   fi
 
-  aws ecr create-repository \
+  if ! aws ecr create-repository \
     --repository-name "${repo_name}" \
-    --region "${AWS_REGION}" >/dev/null
+    --region "${AWS_REGION}" >/dev/null; then
+    echo "    ✗ Failed to create repository: ${repo_name}" >&2
+    return 1
+  fi
 
   echo "    ✓ Created"
 }
@@ -305,25 +314,33 @@ function run_apply_script_with_repo_retry() {
 function create_missing_pack_repos() {
   local output="$1"
   local missing
-  missing="$(echo "${output}" | grep -oP "(?<=archive/)[^']+(?= does not exist)" | sort -u || true)"
+  missing="$(
+    printf '%s\n' "${output}" |
+      sed -nE "s#.*archive/([^'\"[:space:]]+) does not exist.*#\1#p" |
+      sort -u
+  )"
+
   if [[ -z "${missing}" ]]; then
     return 1
   fi
+
   echo "Detected missing ECR pack archive repositories:"
-  echo "${missing}" | tee -a "${LOG_FILE}"
+  printf '%s\n' "${missing}"
+
+  local pack_repo_base="${ECR_PACK_BASE%/}"
+  if [[ "${pack_repo_base##*/}" != "spectro-packs" ]]; then
+    pack_repo_base="${pack_repo_base:+${pack_repo_base}/}spectro-packs"
+  fi
+
   while IFS= read -r pack; do
     [[ -z "${pack}" ]] && continue
+
     local repo
-    repo="$(repo_path "${ECR_PACK_BASE}/archive/${pack}")"
-    echo "Creating ECR repository if missing: ${repo}"
-    if aws ecr create-repository \
-      --repository-name "${repo}" \
-      --region "${REGION}"; then
-      echo "Created repository: ${repo}"
-    else
-      echo "Repository may already exist or create failed: ${repo}. Continuing."
-    fi
+    repo="${pack_repo_base}/archive/${pack}"
+    create_ecr_repo "${repo}" ||
+      fail "Failed to create missing ECR repository: ${repo}"
   done <<< "${missing}"
+
   return 0
 }
 
@@ -380,14 +397,14 @@ function ecrLogin() {
 
 function ensureVertexBinary() {
   # Usage:
-  #   ensureVertexBinary <version>
+  #   ensureVertexBinary <version> [binary-path]
   #
   # Optional env vars:
   #   DOWNLOAD_BINARY=true    # skip prompt and download automatically
   #   DOWNLOAD_USER=spectro   # optional basic auth username
   #   DOWNLOAD_PASS=xxxxx     # optional basic auth password
 
-  local version="${1:-${VERSION:-${VERTEX_VERSION:-}}}"
+  local version="${1:-${VERTEX_VERSION:-}}"
 
   if [[ -z "$version" ]]; then
     echo "❌ Error: version is required" >&2
@@ -395,7 +412,7 @@ function ensureVertexBinary() {
     exit 1
   fi
 
-  local binary="./airgap-vertex-v${version}.bin"
+  local binary="${2:-${BINARY:-./airgap-vertex-v${version}.bin}}"
   local base_url="https://software-private.spectrocloud.com/airgap-vertex"
   local filename="airgap-vertex-v${version}.bin"
   local url="${base_url}/${version}/${filename}"
