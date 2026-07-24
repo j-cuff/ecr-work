@@ -11,7 +11,7 @@ ECR_PACK_BASE="" #does not need spectro-packs here.
 DOWNLOAD_USER=spectro   # optional basic auth username
 DOWNLOAD_PASS=""    # optional basic auth password
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-AIRGAP_DIR="${SCRIPT_DIR}/spectroairgap-${VERTEX_VERSION}"
+AIRGAP_DIR="${SCRIPT_DIR}/downloads/spectroairgap-${VERTEX_VERSION}"
 SKIP_EXTRACTION="false"
 BINARY="${SCRIPT_DIR}/downloads/airgap-vertex-v${VERTEX_VERSION}.bin"
 #####################################

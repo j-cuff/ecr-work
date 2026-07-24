@@ -55,7 +55,7 @@ Edit `common-config.sh` before running the scripts.
 | `DOWNLOAD_USER` | Optional for `push_bin_to_ecr.sh`; required by `push_from_url.sh`. | Set locally |
 | `DOWNLOAD_PASS` | Optional for `push_bin_to_ecr.sh`; required by `push_from_url.sh`. | Set locally |
 | `SCRIPT_DIR` | Absolute directory containing the scripts, derived automatically. | Do not normally override |
-| `AIRGAP_DIR` | Extraction directory for the airgap binary. | `spectroairgap-4.9.18` |
+| `AIRGAP_DIR` | Extraction directory for the airgap binary. | `${SCRIPT_DIR}/downloads/spectroairgap-4.9.18` |
 | `SKIP_EXTRACTION` | Reuse an existing extraction directory when `true`. | `false` |
 | `BINARY` | Airgap installer path used by `push_bin_to_ecr.sh`. | `${SCRIPT_DIR}/downloads/airgap-vertex-v4.9.18.bin` |
 
@@ -138,6 +138,12 @@ By default, the script looks for and downloads the installer beneath
 
 ```text
 downloads/airgap-vertex-v<VERTEX_VERSION>.bin
+```
+
+The installer is extracted beside it:
+
+```text
+downloads/spectroairgap-<VERTEX_VERSION>/
 ```
 
 The workflow:
@@ -356,7 +362,7 @@ path is printed when execution starts. The `.gitignore` excludes:
 - the `logs/` directory
 - legacy root-level `push_to_ecr-*.log` files
 - root-level `push_bin_to_ecr-*.log` files
-- extracted `spectroairgap-*` directories
+- extracted `spectroairgap-*` directories, including those beneath `downloads/`
 - all `airgap-vertex-v*.bin` files
 - `.zst` and `.sig.bin` artifacts directly beneath any `downloads/` directory
 - temporary `downloads/tmp/` extraction trees

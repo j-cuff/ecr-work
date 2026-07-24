@@ -17,7 +17,7 @@ function usage() {
 
 configured_vertex_version="${VERTEX_VERSION:-}"
 default_binary="${SCRIPT_DIR}/downloads/airgap-vertex-v${configured_vertex_version}.bin"
-default_airgap_dir="${SCRIPT_DIR}/spectroairgap-${configured_vertex_version}"
+default_airgap_dir="${SCRIPT_DIR}/downloads/spectroairgap-${configured_vertex_version}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -37,7 +37,7 @@ if [[ -n "${VERSION:-}" ]]; then
   fi
 
   if [[ "${AIRGAP_DIR:-}" == "${default_airgap_dir}" ]]; then
-    AIRGAP_DIR="${SCRIPT_DIR}/spectroairgap-${VERTEX_VERSION}"
+    AIRGAP_DIR="${SCRIPT_DIR}/downloads/spectroairgap-${VERTEX_VERSION}"
   fi
 fi
 
