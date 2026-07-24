@@ -19,5 +19,5 @@ PUBLIC_KEY_URL="https://artifact-studio.spectrocloud.com/spectro_public_key.pem"
 #####################################
 # Specific for delete_ecr_images.sh #
 #####################################
-#example: ECR_DELETE_PATH="${ECR_REGISTRY}/<BASE_CONTENT_PATH>/spectro-packs"
-ECR_DELETE_PATH="${ECR_REGISTRY}/cuff-airgap/spectro-packs"
+#example relative to $ECR_REGISTRY: ECR_DELETE_PATH="${ECR_REGISTRY}/<BASE_CONTENT_PATH>/spectro-packs"
+ECR_DELETE_PATH="/cuff-airgap/spectro-packs"

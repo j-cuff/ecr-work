@@ -23,7 +23,7 @@ if [[ ! "${PREFIX}" =~ ^[a-z0-9]+([._/-][a-z0-9]+)*$ ]]; then
   echo "Set it relative to ECR_REGISTRY, for example: cuff-airgap/spectro-packs" >&2
   exit 2
 fi
-DELETE_PATH="${ECR_REGISTRY}/${PREFIX}"
+ECR_DELETE_PATH="${ECR_REGISTRY}/${PREFIX}"
 
 # Optional: set a named profile if needed
 # export AWS_PROFILE="govcloud"
@@ -32,7 +32,7 @@ echo "Deletion scope:"
 echo "  Account:           ${AWS_ACCOUNT}"
 echo "  Region:            ${AWS_REGION}"
 echo "  Repository prefix: ${PREFIX}"
-echo "  Full ECR path:     ${DELETE_PATH}"
+echo "  Full ECR path:     ${ECR_DELETE_PATH}"
 echo ""
 echo "Only the repository '${PREFIX}' and repositories below '${PREFIX}/' are eligible."
 echo ""
@@ -44,7 +44,7 @@ REPOS=$(aws ecr describe-repositories \
   --output text)
 
 if [[ -z "${REPOS}" ]]; then
-  echo "No repositories found at or below '${DELETE_PATH}'. Nothing to delete."
+  echo "No repositories found at or below '${ECR_DELETE_PATH}'. Nothing to delete."
   exit 0
 fi
 
@@ -56,16 +56,17 @@ done
 
 echo ""
 echo "This permanently deletes every listed repository and all images in it."
-read -rp "Type the exact deletion path to continue (${DELETE_PATH}): " CONFIRM
-if [[ "${CONFIRM}" != "${DELETE_PATH}" ]]; then
-  echo "Aborted: confirmation did not exactly match '${DELETE_PATH}'."
+read -rp "Type the exact deletion path to continue (${ECR_DELETE_PATH}): " CONFIRM
+if [[ "${CONFIRM}" != "${ECR_DELETE_PATH}" ]]; then
+  echo "Aborted: confirmation did not exactly match '${ECR_
+DELETE_PATH}'."
   exit 1
 fi
 
 echo ""
 for REPO in ${REPOS}; do
   echo "==> Deleting repository: ${ECR_REGISTRY}/${REPO}"
-  aws ecr delete-repository \
+  aws --no-cli-pager ecr delete-repository \
     --region "${AWS_REGION}" \
     --repository-name "${REPO}" \
     --force   # --force also deletes all images inside the repo
@@ -73,4 +74,4 @@ for REPO in ${REPOS}; do
 done
 
 echo ""
-echo "Done. All repositories at or below '${DELETE_PATH}' have been deleted."
+echo "Done. All repositories at or below '${ECR_DELETE_PATH}' have been deleted."

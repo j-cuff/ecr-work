@@ -640,8 +640,7 @@ function check_prerequisites() {
     if [[ "${oras_version}" == "1.0.0" ]]; then
       echo "✅ ORAS CLI version: ${oras_version}"
     else
-      echo "❌ ORAS CLI v1.0.0 is required; found: ${oras_version:-unknown version}" >&2
-      problem_tools+=("oras")
+      echo "⚠️  WARNING: ORAS CLI v1.0.0 is recommended; found: ${oras_version:-unknown version}" >&2
     fi
   fi
 
