@@ -19,23 +19,24 @@ cd /path/to/ecr
 | `push_zst_to_ecr.sh` | Push `.zst` bundles that already exist in a local directory. |
 | `push_from_url.sh` | Download bundles and signatures listed in `zst_urls.txt`, verify signatures, and push the `.zst` files. |
 | `delete_ecr_images.sh` | Delete the configured pack repository tree after an exact-path confirmation. This is the recommended deletion script. |
-| `delete_ecr_images-2.sh` | Delete repositories under a hard-coded prefix after one `yes` confirmation. |
 | `common-config.sh` | Shared version, registry, path, and download configuration. |
 | `common-functions.sh` | Shared validation, authentication, extraction, patching, retry, and prerequisite functions. |
+| `zst_urls.txt` | URL input consumed by `push_from_url.sh`. |
 
 ## Security and safety
 
 - Do not commit real download passwords or AWS credentials.
 - Prefer an AWS profile, IAM role, or standard AWS environment variables over
   access keys stored in these scripts.
-- `DOWNLOAD_USER` and `DOWNLOAD_PASS` are masked in `push_to_ecr.sh` validation
-  output, but their values remain available internally for authenticated
-  downloads.
-- The deletion scripts use `aws ecr delete-repository --force`. This permanently
-  deletes each selected repository and all images in it.
+- `DOWNLOAD_USER` and `DOWNLOAD_PASS` are masked by `push_to_ecr.sh`. The current
+  `push_from_url.sh` validation prints both values, so do not share or publish
+  its terminal output.
+- `delete_ecr_images.sh` uses `aws ecr delete-repository --force`. This
+  permanently deletes each selected repository and all images in it.
 - Review every resolved registry path before approving a push or deletion.
-- The bundle push scripts currently pass `--insecure` to `palette content push`.
-  Confirm that this is appropriate for the target registry.
+- `push_zst_to_ecr.sh` and `push_from_url.sh` pass `--insecure` to
+  `palette content push`. Confirm that this is appropriate for the target
+  registry.
 
 ## Shared configuration
 
@@ -49,10 +50,11 @@ Edit `common-config.sh` before running the scripts.
 | `ECR_REGISTRY` | Registry hostname derived from account and region. | `<account-id>.dkr.ecr.<region>.amazonaws.com` |
 | `ECR_BASE_CONTENT_PATH` | Root repository namespace. | `palette-airgap` |
 | `ECR_IMAGE_BASE` | Image namespace below the base content path. | `spectro-images` |
-| `ECR_PACK_BASE` | Optional pack namespace below the base content path. | Empty, or `spectro-packs` for direct bundle pushes |
-| `ECR_DELETE_PATH` | Exact repository prefix that `delete_ecr_images.sh` may delete, relative to `ECR_REGISTRY`. | `palette-airgap/spectro-packs` |
-| `DOWNLOAD_USER` | Optional username for downloading the airgap binary and bundles. | Set locally |
-| `DOWNLOAD_PASS` | Optional password for authenticated downloads. | Set locally |
+| `ECR_PACK_BASE` | Optional pack namespace appended below `ECR_BASE_CONTENT_PATH`. | Empty for the full airgap push; `spectro-packs` for `push_zst_to_ecr.sh` |
+| `ECR_DELETE_PATH` | Exact repository prefix that `delete_ecr_images.sh` may delete, relative to `ECR_REGISTRY`. A leading or trailing slash is normalized away. | `/palette-airgap/spectro-packs` |
+| `DOWNLOAD_USER` | Optional for `push_to_ecr.sh`; required by `push_from_url.sh`. | Set locally |
+| `DOWNLOAD_PASS` | Optional for `push_to_ecr.sh`; required by `push_from_url.sh`. | Set locally |
+| `SCRIPT_DIR` | Absolute directory containing the scripts, derived automatically. | Do not normally override |
 | `AIRGAP_DIR` | Extraction directory for the airgap binary. | `spectroairgap-4.9.18` |
 | `SKIP_EXTRACTION` | Reuse an existing extraction directory when `true`. | `false` |
 | `BINARY` | Airgap installer filename. | `airgap-vertex-v4.9.18.bin` |
@@ -66,30 +68,42 @@ Images: <registry>/<base-content-path>/spectro-images/...
 Packs:  <registry>/<base-content-path>/spectro-packs/archive/...
 ```
 
+The scripts do not use `ECR_PACK_BASE` identically:
+
+- `push_to_ecr.sh` appends it below `ECR_BASE_CONTENT_PATH`, and the extracted
+  airgap setup adds its own `spectro-packs` repository structure. Keep
+  `ECR_PACK_BASE` empty for the default
+  `<base-content-path>/spectro-packs/...` layout.
+- `push_zst_to_ecr.sh` pushes directly to
+  `<ECR_BASE_CONTENT_PATH>/<ECR_PACK_BASE>`.
+- `push_from_url.sh` overrides `ECR_PACK_BASE` with `spectro-packs` regardless
+  of the value in `common-config.sh`.
+
 ## Prerequisites
 
-`push_to_ecr.sh` validates these requirements before authenticating:
+The scripts have different requirements:
 
-| Requirement | Why it is needed |
+| Script | Requirements enforced or used |
 | --- | --- |
-| AWS CLI v2 | Interacts with Amazon ECR. AWS CLI v1 is rejected. |
-| ORAS CLI (v1.0.0 recommended) | Required by the extracted airgap setup scripts. Other ORAS versions produce a warning but do not stop execution. |
-| Docker CLI and running daemon | Loads, tags, and pushes images from the airgap bundle. |
-| `zip` | Used by the airgap setup scripts. |
-| `unzip` | Extracts manifest content from the airgap binary. |
-| `jq` | Processes JSON used by the setup scripts. |
+| `push_to_ecr.sh` | AWS CLI v2, ORAS, Docker CLI with a running daemon, `zip`, `unzip`, and `jq`. It also uses `curl` if the airgap binary must be downloaded. |
+| `push_zst_to_ecr.sh` | A supported Palette CLI, AWS CLI, and a directory containing `.zst` files. The script explicitly rejects macOS. |
+| `push_from_url.sh` | A supported Palette CLI, AWS CLI, `curl`, OpenSSL, `zst_urls.txt`, and download credentials. |
+| `delete_ecr_images.sh` | AWS CLI configured for the target account and region. |
 
-The checker detects macOS, Linux, WSL, and Windows and prints platform-specific
-installation instructions for missing or incorrect tools.
+Only `push_to_ecr.sh` runs the shared prerequisite checker. It detects macOS,
+Linux, WSL, and Windows and prints platform-specific installation instructions
+for missing tools. AWS CLI v1 is rejected. ORAS must be installed, but an
+installed version other than v1.0.0 produces a warning and execution continues.
 
-Additional tools are needed for the individual bundle workflows:
-
-- Palette CLI, installed and configured
-- `curl`
-- OpenSSL for signature verification in `push_from_url.sh`
+The individual bundle scripts do not run that shared checker. Install and
+configure their dependencies before execution. The Palette CLI used by these
+workflows is not available as a compatible multi-architecture macOS binary;
+use a supported Linux environment. `push_zst_to_ecr.sh` enforces this
+restriction, while `push_from_url.sh` currently does not contain the same
+precheck.
 
 The AWS identity needs permissions appropriate to the selected workflow,
-including:
+which can include:
 
 - ECR authentication and image upload permissions
 - `ecr:DescribeRepositories`
@@ -120,7 +134,9 @@ The script also accepts the documented version argument:
 
 Current behavior still uses `VERTEX_VERSION` from `common-config.sh` as the
 effective version, so keep that value synchronized with any positional version
-argument.
+argument. The workflow also reconstructs `BINARY` as
+`./airgap-vertex-v<VERTEX_VERSION>.bin`; changing only `BINARY` in
+`common-config.sh` does not select a different filename.
 
 The workflow:
 
@@ -132,13 +148,17 @@ The workflow:
 6. Enables a Docker wrapper that skips image tags already present in ECR.
 7. Locates the airgap binary or offers to download it.
 8. Extracts the binary into `AIRGAP_DIR`.
-9. Patches the extracted functions for ECR and full destination-path output.
+9. Replaces `ecr-public` with `ecr` in the extracted functions on macOS and
+   Linux, and patches push messages to show full destination paths.
 10. Displays the exact image and pack roots.
 11. Requires confirmation before any pack or image push.
 12. Runs `apply_pack.sh` and `apply_patch.sh`.
-13. Creates missing repositories and retries applicable setup failures, up to
-    20 attempts.
+13. Detects missing pack archive repositories, creates them, and retries that
+    setup script, up to 20 attempts.
 14. Removes the extraction directory after a successful normal run.
+
+If `apply_pack.sh` or `apply_patch.sh` is absent from the extracted directory,
+the helper warns and skips that script.
 
 If the binary is missing, the script prompts before downloading it. For an
 unattended approved download:
@@ -209,19 +229,22 @@ The script:
 3. Pushes every `./bundles/*.zst` file with `palette content push`.
 4. Stops if the directory contains no `.zst` files.
 
-The destination is:
+The destination joins the nonempty configured path components:
 
 ```text
 <ECR_REGISTRY>/<ECR_BASE_CONTENT_PATH>/<ECR_PACK_BASE>
 ```
 
 Set `ECR_PACK_BASE="spectro-packs"` in `common-config.sh` when the intended
-destination is the standard pack root.
+destination is the standard pack root. There is no destination confirmation in
+this script; review the configuration before running it.
 
 ## Use case 4: Download, verify, and push bundles from URLs
 
-Add one URL per line to `zst_urls.txt`. Empty lines and lines beginning with `#`
-are ignored. Include both each `.zst` URL and its matching `.sig.bin` URL.
+Add one URL per line to `zst_urls.txt` in the current working directory. Empty
+lines and lines beginning with `#` are ignored. Include both each `.zst` URL
+and its matching `.sig.bin` URL. The script does not accept an alternate URL
+file argument.
 
 Run:
 
@@ -231,13 +254,17 @@ Run:
 
 The script:
 
-1. Downloads listed files into `./bundles/downloads`.
-2. Skips files already present locally.
-3. Downloads the configured public key if necessary.
-4. Verifies each `.zst` against the matching `.sig.bin`.
-5. Displays passed and failed signature counts.
-6. Authenticates the Palette CLI to ECR.
-7. Pushes all downloaded `.zst` files.
+1. Requires nonempty `DOWNLOAD_USER` and `DOWNLOAD_PASS`.
+2. Downloads every listed URL into `./bundles/downloads` using HTTP basic
+   authentication.
+3. Skips files already present locally without downloading or revalidating
+   them.
+4. Downloads the configured public key if necessary.
+5. For each `.zst`, looks for a sibling signature named
+   `<bundle-name>.sig.bin`.
+6. Verifies available pairs and displays passed and failed signature counts.
+7. Authenticates the Palette CLI to ECR.
+8. Pushes all downloaded `.zst` files with `--insecure`.
 
 This workflow sets `ECR_PACK_BASE="spectro-packs"` internally. Its destination
 is:
@@ -246,8 +273,16 @@ is:
 <ECR_REGISTRY>/<ECR_BASE_CONTENT_PATH>/spectro-packs
 ```
 
-Important: the current script reports failed or missing signatures but does not
-automatically stop before the push. Review the verification results carefully.
+Important limitations in the current implementation:
+
+- A failed signature increments the failure count, but does not stop the push.
+- A missing bundle or signature is reported as `SKIP` and is not included in
+  the failure count.
+- The download loop does not use `curl --fail`, and the script does not use
+  `set -e`, so a failed download might not stop the workflow.
+- The script does not ask for destination confirmation.
+
+Review download and verification output before allowing the push to continue.
 
 ## Use case 5: Delete the configured pack repository tree
 
@@ -264,41 +299,23 @@ It:
    for deletion. The value is relative to `ECR_REGISTRY`, for example:
 
    ```text
-   ECR_DELETE_PATH="palette-airgap/spectro-packs"
+   ECR_DELETE_PATH="/palette-airgap/spectro-packs"
    ```
 
-3. Resolves the full confirmation path as
-   `<ECR_REGISTRY>/<ECR_DELETE_PATH>`.
-4. Selects only the exact configured repository and repositories below it.
-5. Displays every full ECR repository path selected for deletion.
-6. Requires the operator to type the complete resolved deletion path.
-7. Force-deletes every listed repository and all contained images.
+   Do not include the registry hostname. A leading or trailing slash is
+   removed.
+
+3. Validates that the normalized value is a valid lowercase ECR repository
+   prefix.
+4. Resolves the full confirmation path as
+   `<ECR_REGISTRY>/<normalized-ECR_DELETE_PATH>`.
+5. Selects only the exact configured repository and repositories below it.
+6. Exits successfully without prompting when no repositories match.
+7. Displays every full ECR repository path selected for deletion.
+8. Requires the operator to type the complete resolved deletion path.
+9. Force-deletes every listed repository and all contained images.
 
 Any confirmation mismatch aborts before deletion.
-
-## Use case 6: Delete a hard-coded repository prefix
-
-`delete_ecr_images-2.sh` uses the account, region, and prefix declared directly
-inside that script:
-
-```bash
-./delete_ecr_images-2.sh
-```
-
-It displays the initial repository list and asks once:
-
-```text
-Are you sure you want to delete all of the above? (yes/no):
-```
-
-Only the exact response `yes` proceeds. It does not ask again for each
-repository. The AWS CLI pager and per-delete JSON responses are suppressed,
-while concise deletion progress remains visible.
-
-Use this script only after reviewing its hard-coded `ACCOUNT_ID`, `REGION`, and
-`PREFIX`. Its query uses `starts_with`, so similarly named repositories also
-match when their names begin with that prefix. Prefer `delete_ecr_images.sh`
-when shared configuration should define the target.
 
 ## Logs and generated files
 
@@ -308,9 +325,16 @@ when shared configuration should define the target.
 push_to_ecr-<vertex-version>-<YYYYmmddHHMMSS>.log
 ```
 
-The full console stream is copied to this file. The `.gitignore` excludes these
-logs, extracted `spectroairgap-*` directories, the configured airgap binary,
-and known bundle artifacts.
+The full console stream is copied to this file. The `.gitignore` excludes:
+
+- `push_to_ecr-*.log`
+- extracted `spectroairgap-*` directories
+- the currently listed `airgap-vertex-v4.9.18.bin`
+- the explicitly listed bundle and signature filenames
+
+The binary and bundle ignore entries are not general wildcard rules. If the
+configured version or bundle names change, update `.gitignore` before running
+or committing.
 
 The retry helper creates temporary attempt logs under `/tmp`. Successful
 attempt logs are removed. Relevant failed output is replayed into the main log.
@@ -321,11 +345,16 @@ Downloaded URL bundles are stored beneath:
 <bundle-dir>/downloads/
 ```
 
+That generated directory is not ignored by a general `.gitignore` rule. Use a
+disposable bundle directory or add an appropriate repository-specific ignore
+entry before downloading sensitive or large artifacts.
+
 ## Troubleshooting
 
 ### Prerequisite check fails
 
-Follow the OS-specific guidance printed by the script. Confirm versions with:
+This check is run only by `push_to_ecr.sh`. Follow its OS-specific guidance and
+confirm versions with:
 
 ```bash
 aws --version
@@ -340,6 +369,12 @@ jq --version
 AWS output must begin with `aws-cli/2.`. ORAS v1.0.0 is recommended; a
 different or unrecognized ORAS version produces a warning but does not stop
 execution.
+
+### Palette CLI workflow fails on macOS
+
+Run the bundle workflow from a supported Linux environment.
+`push_zst_to_ecr.sh` rejects macOS immediately. `push_from_url.sh` currently
+does not perform the precheck, but it still invokes the same Palette CLI.
 
 ### Docker is installed but unavailable
 
@@ -390,5 +425,10 @@ active AWS profile.
 
 ### Incorrect destination
 
-Do not approve the confirmation. Correct `ECR_BASE_CONTENT_PATH`,
-`ECR_IMAGE_BASE`, or `ECR_PACK_BASE`, then rerun and review the resolved paths.
+For `push_to_ecr.sh`, do not approve the confirmation. Correct
+`ECR_BASE_CONTENT_PATH`, `ECR_IMAGE_BASE`, or `ECR_PACK_BASE`, then rerun and
+review the resolved paths.
+
+The two bundle push scripts do not prompt. Stop them before the push and correct
+the shared configuration. For deletion, correct `ECR_DELETE_PATH` and rerun;
+never confirm an unexpected full path.

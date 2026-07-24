@@ -1,5 +1,6 @@
-# Build your bundle online at Artifact-Studio.spectrocloud.com
-# Paste all the urls of the .zst files you want to push to ECR into a file, one per line. Then run this script with the file as an argument.
+# Build your bundle online at Artifact-Studio.spectrocloud.com, then copy all URL's instead of downloading the bundles.
+# Paste all the urls of the .zst / .sig files you want to push to ECR into a file, one per line. Then run this script with the zst_urls.txt file as an argument.
+# Example: https://software.spectrocloud.com/artifact-studio/zst/vertex/4.7/4.7.30/ubuntu-aws-22.04/ubuntu-aws-22.04.zst
 https://software.spectrocloud.com/artifact-studio/zst/vertex/4.7/4.7.30/ubuntu-aws-22.04/ubuntu-aws-22.04.zst
 https://software.spectrocloud.com/artifact-studio/zst/vertex/4.7/4.7.30/ubuntu-aws-22.04/ubuntu-aws-22.04.sig.bin
 https://software.spectrocloud.com/artifact-studio/zst/vertex/4.9/4.9.5/kubernetes-1.35.3/kubernetes-1.35.3.zst
