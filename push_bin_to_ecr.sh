@@ -131,7 +131,7 @@ print_boxed "Step #4: Pushing Packs and Images to Airgapped Private ECR's"
 echo "Starting airgap push for version: ${VERTEX_VERSION}"
 echo "Binary: ${BINARY}"
 echo "Registry: ${ECR_REGISTRY}"
-echo "Packs Push to: ${ECR_PACK_REGISTRY}/${ECR_PACK_BASE%/}/spectro-packs"
+echo "Packs Push to: ${ECR_PACK_REGISTRY%/}/${ECR_PACK_BASE:+${ECR_PACK_BASE%/}/}spectro-packs"
 echo "Images Push to: ${ECR_IMAGE_REGISTRY}/${ECR_IMAGE_BASE%/}"
 echo ""
 
