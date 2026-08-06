@@ -184,6 +184,22 @@ Each pushed pack is displayed with its full destination:
 Image operations display both resolved destination references created by the
 airgap setup script.
 
+Before each Docker image push, the wrapper calls `ecr:DescribeImages` for the
+target repository and tag in the account identified by `ECR_REGISTRY`. Existing
+tags are skipped. A missing tag or repository proceeds to the normal push path;
+authentication, authorization, network, and other unexpected lookup failures
+stop the workflow rather than risk an unnecessary push.
+
+If an ECR Docker push fails, it is retried twice (three total attempts), with a
+five-second delay between attempts. Override the defaults with
+`ECR_PUSH_MAX_ATTEMPTS` and `ECR_PUSH_RETRY_DELAY_SECONDS` if needed.
+
+Run the mocked regression test without contacting AWS or Docker:
+
+```bash
+bash tests/test_ecr_push_skip.sh
+```
+
 ### Existing extraction directory
 
 Without `--skip-extraction`, an existing `AIRGAP_DIR` causes the run to stop
@@ -466,3 +482,4 @@ review the resolved paths.
 The two bundle push scripts do not prompt. Stop them before the push and correct
 the shared configuration. For deletion, correct `ECR_DELETE_PATH` and rerun;
 never confirm an unexpected full path.
+# ecr
