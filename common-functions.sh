@@ -717,6 +717,12 @@ function enable_docker_push_skip_if_exists() {
   validateVar ECR_REGISTRY
   validateVar AWS_REGION
 
+  local registry_id
+  registry_id="${ECR_REGISTRY%%.*}"
+  if [[ ! "${registry_id}" =~ ^[0-9]{12}$ ]]; then
+    fail "Unable to determine the 12-digit AWS account ID from ECR_REGISTRY: ${ECR_REGISTRY}"
+  fi
+
   local real_docker
   real_docker="$(command -v docker)"
 
@@ -729,6 +735,7 @@ function enable_docker_push_skip_if_exists() {
 
   export REAL_DOCKER_BIN="${real_docker}"
   export ECR_REGISTRY
+  export ECR_REGISTRY_ID="${registry_id}"
   export AWS_REGION
   export PATH="${wrapper_dir}:${PATH}"
 
@@ -775,12 +782,55 @@ parse_ecr_image_ref() {
 ecr_image_tag_exists() {
   local repo="$1"
   local tag="$2"
+  local aws_output
 
-  aws ecr describe-images \
-    --region "${AWS_REGION:?AWS_REGION is not set}" \
-    --repository-name "${repo}" \
-    --image-ids "imageTag=${tag}" \
-    >/dev/null 2>&1
+  if aws_output="$(
+    aws ecr describe-images \
+      --registry-id "${ECR_REGISTRY_ID:?ECR_REGISTRY_ID is not set}" \
+      --region "${AWS_REGION:?AWS_REGION is not set}" \
+      --repository-name "${repo}" \
+      --image-ids "imageTag=${tag}" \
+      --query 'imageDetails[0].imageDigest' \
+      --output text 2>&1
+  )"; then
+    return 0
+  fi
+
+  case "${aws_output}" in
+    *ImageNotFoundException*|*RepositoryNotFoundException*)
+      return 1
+      ;;
+    *)
+      echo "Unable to check whether the image tag exists in ECR; refusing to push:" >&2
+      echo "  ${ECR_REGISTRY}/${repo}:${tag}" >&2
+      printf '%s\n' "${aws_output}" >&2
+      return 2
+      ;;
+  esac
+}
+
+push_ecr_image_with_retries() {
+  local max_attempts="${ECR_PUSH_MAX_ATTEMPTS:-3}"
+  local retry_delay="${ECR_PUSH_RETRY_DELAY_SECONDS:-5}"
+  local attempt=1
+  local push_status
+
+  while ((attempt <= max_attempts)); do
+    if "${real_docker}" "$@"; then
+      return 0
+    else
+      push_status=$?
+    fi
+
+    if ((attempt == max_attempts)); then
+      echo "Docker push failed after ${max_attempts} attempts." >&2
+      return "${push_status}"
+    fi
+
+    echo "Docker push failed (attempt ${attempt}/${max_attempts}); retrying in ${retry_delay} seconds..." >&2
+    sleep "${retry_delay}"
+    attempt=$((attempt + 1))
+  done
 }
 
 # Intercept:
@@ -797,10 +847,17 @@ if [[ "${1:-}" == "push" ]]; then
       echo "Image already exists in ECR. Skipping push:"
       echo "  ${image_ref}"
       exit 0
+    else
+      ecr_check_status=$?
+      if [[ ${ecr_check_status} -ne 1 ]]; then
+        exit "${ecr_check_status}"
+      fi
     fi
 
     echo "Image does not exist in ECR. Pushing:"
     echo "  ${image_ref}"
+    push_ecr_image_with_retries "$@"
+    exit $?
   fi
 fi
 

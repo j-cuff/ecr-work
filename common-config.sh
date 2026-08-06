@@ -1,9 +1,9 @@
 # Example values for the below variables:
 # ${AWS_ACCOUNT}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_BASE_CONTENT_PATH}/${ECR_IMAGE_BASE}"
 # ${AWS_ACCOUNT}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_BASE_CONTENT_PATH}/${ECR_PACK_BASE}"
-VERTEX_VERSION="4.9.18"
-AWS_ACCOUNT="" # e.g. 123456789012
-ECR_BASE_CONTENT_PATH="" # e.g. 103448924380.dkr.ecr.us-gov-west-1.amazonaws.com/BASE_CONTENT_PATH/spectro-images
+VERTEX_VERSION="4.9.38"
+AWS_ACCOUNT="103448924380" # e.g. 123456789012
+ECR_BASE_CONTENT_PATH="cuff-airgap" # e.g. 103448924380.dkr.ecr.us-gov-west-1.amazonaws.com/BASE_CONTENT_PATH/spectro-images
 AWS_REGION="us-gov-west-1" # YOUR AWS REGION #(e.g. us-gov-west-1)
 ECR_REGISTRY=$AWS_ACCOUNT.dkr.ecr.$AWS_REGION.amazonaws.com
 ECR_IMAGE_BASE="spectro-images"
@@ -14,6 +14,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 AIRGAP_DIR="${SCRIPT_DIR}/downloads/spectroairgap-${VERTEX_VERSION}"
 SKIP_EXTRACTION="false"
 BINARY="${SCRIPT_DIR}/downloads/airgap-vertex-v${VERTEX_VERSION}.bin"
+ECR_IMAGE_REGISTRY_TYPE="ecr-private"
+ECR_PACK_REGISTRY_TYPE="ecr-private"
 #####################################
 # Specific for delete_ecr_images.sh #
 #####################################
